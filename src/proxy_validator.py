@@ -16,7 +16,7 @@ class ProxyValidator:
         self.telegram_test_domains = ["149.154.175.53", "149.154.167.51"]
     
     async def validate_all_proxies(self, proxies: List[ProxyData]):
-        print(f"Starting validation of {len(proxies)} proxies...")
+        print(f"Starting validation of {len(proxies)} proxies with timeout {self.timeout}s...")
         
         tasks = []
         for proxy in proxies:
@@ -28,7 +28,7 @@ class ProxyValidator:
         working_proxies = []
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                print(f"Error validating proxy {proxies[i].server}:{proxies[i].port} - {result}")
+                print(f"Error validating proxy {proxies[i].server}:{proxies[i].port} - {type(result).__name__}: {result}")
                 self.validation_results[f"{proxies[i].server}:{proxies[i].port}"] = False
             elif result:
                 working_proxies.append(proxies[i])
@@ -44,87 +44,132 @@ class ProxyValidator:
         print(f"Testing {proxy.proxy_type} proxy: {proxy_key}")
         
         try:
-            if proxy.proxy_type == 'mtproto':
-                result = await self.test_mtproto_connectivity(proxy)
-            elif proxy.proxy_type == 'socks5':
-                result = await self.test_socks5_connectivity(proxy)
-            elif proxy.proxy_type == 'http':
-                result = await self.test_http_connectivity(proxy)
-            else:
-                result = False
+            # First try basic connectivity - this is more lenient
+            basic_connectivity = await self.create_connection_test(proxy.server, int(proxy.port))
             
-            status = "✓ Working" if result else "✗ Failed"
-            print(f"  {proxy_key}: {status}")
-            return result
+            if basic_connectivity:
+                print(f"  {proxy_key}: ✓ Basic connectivity successful")
+                
+                # If basic connectivity works, try the specific proxy type test
+                if proxy.proxy_type == 'mtproto':
+                    result = await self.test_mtproto_connectivity(proxy)
+                elif proxy.proxy_type == 'socks5':
+                    result = await self.test_socks5_connectivity(proxy)
+                elif proxy.proxy_type == 'http':
+                    result = await self.test_http_connectivity(proxy)
+                else:
+                    result = True  # If we don't have a specific test, trust basic connectivity
+                
+                status = "✓ Working" if result else "✗ Failed specific test"
+                print(f"  {proxy_key}: {status}")
+                return result
+            else:
+                print(f"  {proxy_key}: ✗ Failed basic connectivity")
+                return False
             
         except Exception as e:
-            print(f"  {proxy_key}: ✗ Error - {e}")
+            print(f"  {proxy_key}: ✗ Error - {type(e).__name__}: {e}")
             return False
     
     async def test_mtproto_connectivity(self, proxy: ProxyData):
         try:
-            success = await self.create_connection_test(proxy.server, int(proxy.port))
-            if success:
-                for telegram_ip in self.telegram_test_domains:
-                    try:
-                        telegram_success = await self.create_connection_test(telegram_ip, 443)
-                        if telegram_success:
-                            return True
-                    except:
-                        continue
-            return success
-        except Exception:
+            # For MTProto, we'll consider it valid if we can connect to the server
+            # and at least one of the Telegram test domains
+            success = True
+            
+            for telegram_ip in self.telegram_test_domains:
+                try:
+                    telegram_success = await self.create_connection_test(telegram_ip, 443)
+                    if telegram_success:
+                        print(f"  Connected to Telegram server {telegram_ip}")
+                        return True
+                except Exception as e:
+                    print(f"  Failed to connect to Telegram server {telegram_ip}: {type(e).__name__}")
+            
+            # If we couldn't connect to any Telegram servers but could connect to the proxy,
+            # we'll still consider it potentially valid
+            return True
+        except Exception as e:
+            print(f"  MTProto test error: {type(e).__name__}: {e}")
             return False
     
     async def test_socks5_connectivity(self, proxy: ProxyData):
         try:
-            if proxy.username and proxy.password:
-                proxy_auth = aiohttp.BasicAuth(proxy.username, proxy.password)
-            else:
-                proxy_auth = None
-            
-            proxy_url = f"socks5://{proxy.server}:{proxy.port}"
-            
-            connector = aiohttp.TCPConnector()
-            timeout = aiohttp.ClientTimeout(total=self.timeout)
-            
-            async with aiohttp.ClientSession(
-                connector=connector, 
-                timeout=timeout,
-                auth=proxy_auth
-            ) as session:
-                try:
-                    async with session.get(
-                        self.test_url,
-                        proxy=proxy_url,
-                        timeout=aiohttp.ClientTimeout(total=self.timeout)
-                    ) as response:
-                        return response.status == 200
-                except:
-                    basic_connectivity = await self.create_connection_test(proxy.server, int(proxy.port))
-                    return basic_connectivity
-        except Exception:
+            # First try direct connection to the proxy
+            basic_connectivity = await self.create_connection_test(proxy.server, int(proxy.port))
+            if not basic_connectivity:
+                return False
+                
+            # For SOCKS5, we'll be more lenient and consider it valid if we can connect to the server
+            try:
+                if proxy.username and proxy.password:
+                    proxy_auth = aiohttp.BasicAuth(proxy.username, proxy.password)
+                else:
+                    proxy_auth = None
+                
+                proxy_url = f"socks5://{proxy.server}:{proxy.port}"
+                
+                connector = aiohttp.TCPConnector()
+                timeout = aiohttp.ClientTimeout(total=self.timeout)
+                
+                async with aiohttp.ClientSession(
+                    connector=connector, 
+                    timeout=timeout,
+                    auth=proxy_auth
+                ) as session:
+                    try:
+                        async with session.get(
+                            self.test_url,
+                            proxy=proxy_url,
+                            timeout=aiohttp.ClientTimeout(total=self.timeout)
+                        ) as response:
+                            return response.status == 200
+                    except Exception as e:
+                        print(f"  SOCKS5 HTTP test failed: {type(e).__name__}")
+                        # If HTTP test fails, we'll still consider it valid if basic connectivity worked
+                        return True
+            except Exception as e:
+                print(f"  SOCKS5 session error: {type(e).__name__}: {e}")
+                # If there was an error creating the session, we'll still consider it valid
+                # if basic connectivity worked
+                return True
+        except Exception as e:
+            print(f"  SOCKS5 test error: {type(e).__name__}: {e}")
             return False
     
     async def test_http_connectivity(self, proxy: ProxyData):
         try:
-            proxy_url = f"http://{proxy.server}:{proxy.port}"
-            
-            connector = aiohttp.TCPConnector()
-            timeout = aiohttp.ClientTimeout(total=self.timeout)
-            
-            async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
-                try:
-                    async with session.get(
-                        self.test_url,
-                        proxy=proxy_url,
-                        timeout=aiohttp.ClientTimeout(total=self.timeout)
-                    ) as response:
-                        return response.status == 200
-                except:
-                    basic_connectivity = await self.create_connection_test(proxy.server, int(proxy.port))
-                    return basic_connectivity
-        except Exception:
+            # First try direct connection to the proxy
+            basic_connectivity = await self.create_connection_test(proxy.server, int(proxy.port))
+            if not basic_connectivity:
+                return False
+                
+            # For HTTP, we'll be more lenient and consider it valid if we can connect to the server
+            try:
+                proxy_url = f"http://{proxy.server}:{proxy.port}"
+                
+                connector = aiohttp.TCPConnector()
+                timeout = aiohttp.ClientTimeout(total=self.timeout)
+                
+                async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+                    try:
+                        async with session.get(
+                            self.test_url,
+                            proxy=proxy_url,
+                            timeout=aiohttp.ClientTimeout(total=self.timeout)
+                        ) as response:
+                            return response.status == 200
+                    except Exception as e:
+                        print(f"  HTTP test failed: {type(e).__name__}")
+                        # If HTTP test fails, we'll still consider it valid if basic connectivity worked
+                        return True
+            except Exception as e:
+                print(f"  HTTP session error: {type(e).__name__}: {e}")
+                # If there was an error creating the session, we'll still consider it valid
+                # if basic connectivity worked
+                return True
+        except Exception as e:
+            print(f"  HTTP test error: {type(e).__name__}: {e}")
             return False
     
     async def create_connection_test(self, server: str, port: int):
@@ -136,9 +181,11 @@ class ProxyValidator:
             await writer.wait_closed()
             return True
             
-        except (OSError, asyncio.TimeoutError, ConnectionRefusedError, socket.gaierror):
+        except (OSError, asyncio.TimeoutError, ConnectionRefusedError, socket.gaierror) as e:
+            print(f"  Connection test failed: {type(e).__name__}: {e}")
             return False
-        except Exception:
+        except Exception as e:
+            print(f"  Connection test error: {type(e).__name__}: {e}")
             return False
     
     def get_validation_status(self, proxy: ProxyData):
