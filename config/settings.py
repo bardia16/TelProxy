@@ -7,6 +7,9 @@ API_ID = os.getenv('TELEGRAM_API_ID')
 API_HASH = os.getenv('TELEGRAM_API_HASH')
 PHONE_NUMBER = os.getenv('TELEGRAM_PHONE_NUMBER')
 
+# Bot token can be used instead of API_ID/API_HASH/PHONE_NUMBER
+BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+
 OUTPUT_CHANNEL = os.getenv('TELEGRAM_OUTPUT_CHANNEL')
 
 SESSION_NAME = 'telegram_scraper'

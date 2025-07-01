@@ -15,7 +15,9 @@ A Python project to scrape specific Telegram channels for extracting Telegram pr
 ## Requirements
 
 - Python 3.8+
-- Telegram API credentials (api_id and api_hash)
+- Either:
+  - Telegram API credentials (api_id and api_hash), or
+  - Telegram Bot Token (easier option)
 
 ## Setup
 
@@ -37,12 +39,32 @@ A Python project to scrape specific Telegram channels for extracting Telegram pr
 5. Configure target channels in `config/channels.py`
 6. (Optional) Set `TELEGRAM_OUTPUT_CHANNEL` for automated posting
 
-## Getting Telegram API Credentials
+## Authentication Options
+
+You can authenticate with Telegram in one of two ways:
+
+### Option 1: Telegram API Credentials (User Account)
 
 1. Go to https://my.telegram.org
 2. Login with your phone number
 3. Go to "API Development Tools"
 4. Create a new application to get `api_id` and `api_hash`
+5. Add to your `.env` file:
+   ```
+   TELEGRAM_API_ID=your_api_id
+   TELEGRAM_API_HASH=your_api_hash
+   TELEGRAM_PHONE_NUMBER=your_phone_number
+   ```
+
+### Option 2: Bot Token (Recommended)
+
+1. Talk to [@BotFather](https://t.me/botfather) on Telegram
+2. Create a new bot with `/newbot` command
+3. Get your bot token
+4. Add to your `.env` file:
+   ```
+   TELEGRAM_BOT_TOKEN=your_bot_token
+   ```
 
 ## Usage
 
@@ -58,9 +80,9 @@ python -m src.main schedule
 
 ### Output Modes
 
-**Local Storage Only**: Configure only API credentials - proxies saved to JSON and SQLite database
+**Local Storage Only**: Configure only API credentials or bot token - proxies saved to JSON and SQLite database
 
-**Combined Method (Recommended)**: Configure API credentials + output channel - proxies posted to Telegram with automatic pinning and historical tracking
+**Combined Method (Recommended)**: Configure API credentials/bot token + output channel - proxies posted to Telegram with automatic pinning and historical tracking
 
 ## Project Structure
 
