@@ -4,11 +4,13 @@ A Python project to scrape specific Telegram channels for extracting Telegram pr
 
 ## Features
 
-- Scrapes public Telegram channels for proxy links
-- Extracts MTProto and SOCKS5 proxy URLs using pattern recognition
-- Validates proxy connectivity
-- Stores proxies in local storage for offline access
-- Modular, clean architecture following SOLID principles
+- **Comprehensive Scraping**: Extracts proxy links from text, hyperlinks, and inline buttons
+- **Multi-Format Support**: MTProto, SOCKS5, and HTTP proxy detection
+- **Real Connectivity Testing**: Validates proxies with actual connection tests
+- **Dual Storage**: Local SQLite database + JSON export for offline access
+- **Automated Telegram Posting**: Hourly updates with message pinning
+- **Historical Tracking**: Maintains posting history and statistics
+- **Clean Architecture**: Modular design following SOLID principles
 
 ## Requirements
 
@@ -27,8 +29,13 @@ A Python project to scrape specific Telegram channels for extracting Telegram pr
    ```bash
    pip install -r requirements.txt
    ```
-4. Configure your Telegram API credentials in `config/settings.py`
-5. Specify target channels in `config/channels.py`
+4. Create `.env` file and configure credentials:
+   ```bash
+   cp .env.example .env
+   # Edit .env with your credentials
+   ```
+5. Configure target channels in `config/channels.py`
+6. (Optional) Set `TELEGRAM_OUTPUT_CHANNEL` for automated posting
 
 ## Getting Telegram API Credentials
 
@@ -39,9 +46,21 @@ A Python project to scrape specific Telegram channels for extracting Telegram pr
 
 ## Usage
 
+### Single Run (Extract & Validate Once)
 ```bash
-python -m src.main
+python -m src.main once
 ```
+
+### Scheduled Hourly Runs (Automated)
+```bash
+python -m src.main schedule
+```
+
+### Output Modes
+
+**Local Storage Only**: Configure only API credentials - proxies saved to JSON and SQLite database
+
+**Combined Method (Recommended)**: Configure API credentials + output channel - proxies posted to Telegram with automatic pinning and historical tracking
 
 ## Project Structure
 
@@ -49,21 +68,25 @@ python -m src.main
 telegram_proxy/
 ├── src/
 │   ├── __init__.py
-│   ├── main.py
-│   ├── telegram_client.py
-│   ├── channel_scraper.py
-│   ├── proxy_extractor.py
-│   ├── proxy_validator.py
-│   └── proxy_storage.py
+│   ├── main.py              # Entry point with CLI options
+│   ├── scheduler.py         # Automated hourly execution
+│   ├── telegram_client.py   # Telegram API wrapper
+│   ├── channel_scraper.py   # Message extraction & parsing
+│   ├── proxy_extractor.py   # Proxy URL pattern recognition
+│   ├── proxy_validator.py   # Connectivity testing
+│   └── proxy_storage.py     # Local & Telegram storage
 ├── config/
 │   ├── __init__.py
-│   ├── settings.py
-│   └── channels.py
+│   ├── settings.py          # Configuration management
+│   └── channels.py          # Target channels list
 ├── tests/
 │   └── __init__.py
 ├── data/
-│   └── .gitkeep
+│   ├── .gitkeep
+│   ├── proxies.json         # JSON export (generated)
+│   └── proxies.db           # SQLite database (generated)
 ├── requirements.txt
+├── .env.example             # Environment template
 ├── .gitignore
 └── README.md
 ```
