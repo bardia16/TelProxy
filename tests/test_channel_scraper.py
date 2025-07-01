@@ -159,25 +159,16 @@ class TestChannelScraper(unittest.TestCase):
         self.assertEqual(result['urls'], [])
         self.assertEqual(result['combined_text'], "Basic text message")
     
-    def test_extract_full_message_data_with_entities(self):
-        from telethon.tl.types import MessageEntityTextUrl, MessageEntityUrl
-        
+    def test_extract_full_message_data_with_urls(self):
         mock_message = Mock()
-        mock_message.message = "Check this link"
+        mock_message.message = "Check this link https://example.com/proxy and https://another.com"
         mock_message.reply_markup = None
         mock_message.buttons = None
         mock_message.web_preview = None
         
-        mock_entity1 = Mock(spec=MessageEntityTextUrl)
-        mock_entity1.url = "https://example.com/proxy"
-        mock_entity2 = Mock()
-        mock_entity2.url = "https://another.com"
-        
-        mock_message.entities = [mock_entity1, mock_entity2]
-        
         result = self.scraper.extract_full_message_data(mock_message)
         
-        self.assertEqual(result['text'], "Check this link")
+        self.assertEqual(result['text'], "Check this link https://example.com/proxy and https://another.com")
         self.assertIn("https://example.com/proxy", result['urls'])
         self.assertIn("https://another.com", result['urls'])
         self.assertIn("https://example.com/proxy", result['combined_text'])

@@ -2,7 +2,6 @@ import re
 import asyncio
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
-from telethon.tl.types import MessageEntityTextUrl, MessageEntityUrl
 from src.telegram_client import TelegramClient
 from config.channels import TELEGRAM_CHANNELS
 
@@ -63,7 +62,7 @@ class ChannelScraper:
         cutoff_date = datetime.now() - timedelta(days=30)
         
         for message in messages:
-            if not message or not message.date:
+            if not message or not hasattr(message, 'date'):
                 continue
             
             if message.date < cutoff_date:
@@ -94,39 +93,16 @@ class ChannelScraper:
         elif hasattr(message, 'text') and message.text:
             text = message.text
         
-        if hasattr(message, 'entities') and message.entities:
-            for entity in message.entities:
-                if isinstance(entity, MessageEntityTextUrl) and entity.url:
-                    urls.append(entity.url)
-                elif isinstance(entity, MessageEntityUrl) and hasattr(entity, 'url') and entity.url:
-                    urls.append(entity.url)
-                elif hasattr(entity, 'url') and entity.url:
-                    urls.append(entity.url)
-        
-        if hasattr(message, 'reply_markup') and message.reply_markup:
-            if hasattr(message.reply_markup, 'rows'):
-                for row in message.reply_markup.rows:
-                    for button in row.buttons:
-                        if hasattr(button, 'url') and button.url:
-                            urls.append(button.url)
-                        elif hasattr(button, 'text') and button.text:
-                            text += f" {button.text}"
-        
-        if hasattr(message, 'buttons') and message.buttons:
-            for button_row in message.buttons:
-                for button in button_row:
-                    if hasattr(button, 'url') and button.url:
-                        urls.append(button.url)
-                    elif hasattr(button, 'text') and button.text:
-                        text += f" {button.text}"
-        
-        if hasattr(message, 'web_preview') and message.web_preview:
-            if hasattr(message.web_preview, 'url'):
-                urls.append(message.web_preview.url)
+        # Extract URLs from the message text using regex
+        if text:
+            url_pattern = r'https?://\S+|t\.me/\S+|tg://\S+'
+            found_urls = re.findall(url_pattern, text)
+            urls.extend(found_urls)
         
         combined_text = text
         for url in urls:
-            combined_text += f" {url}"
+            if url not in text:  # Avoid duplication
+                combined_text += f" {url}"
         
         return {
             'text': text.strip(),

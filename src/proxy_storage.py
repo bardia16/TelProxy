@@ -4,10 +4,9 @@ import asyncio
 from datetime import datetime, timezone
 from typing import List, Dict, Optional
 from pathlib import Path
-from telethon import TelegramClient as TelethonClient
-from telethon.tl.functions.channels import UpdatePinnedMessageRequest
+from telegram import Bot
 from src.proxy_extractor import ProxyData
-from config.settings import STORAGE_FILE_PATH, API_ID, API_HASH, SESSION_NAME
+from config.settings import STORAGE_FILE_PATH, API_ID, API_HASH, SESSION_NAME, BOT_TOKEN
 
 
 class ProxyStorage:
@@ -234,16 +233,16 @@ class ProxyStorage:
         try:
             message = self._format_proxy_message(proxies)
             
-            sent_message = await self.telegram_client.client.send_message(
-                self.output_channel, message, parse_mode='markdown'
+            message_id = await self.telegram_client.send_message(
+                self.output_channel, message
             )
             
-            await self._pin_latest_message(sent_message.id)
+            if message_id:
+                await self._pin_latest_message(message_id)
+                self._record_posting_history(message_id, len(proxies))
+                print(f"✅ Posted {len(proxies)} proxies to Telegram channel")
             
-            self._record_posting_history(sent_message.id, len(proxies))
-            
-            print(f"✅ Posted {len(proxies)} proxies to Telegram channel")
-            return sent_message.id
+            return message_id
             
         except Exception as e:
             print(f"❌ Error posting to Telegram: {e}")
@@ -296,21 +295,28 @@ class ProxyStorage:
     
     async def _pin_latest_message(self, message_id: int):
         try:
+            if not self.telegram_client:
+                return
+                
+            # Unpin previous message if exists
             if self.last_posted_message_id:
-                await self.telegram_client.client(UpdatePinnedMessageRequest(
-                    channel=self.output_channel,
-                    id=0,
-                    unpin=True
-                ))
+                try:
+                    await self.telegram_client.pin_message(
+                        self.output_channel, 
+                        message_id=0  # 0 means unpin
+                    )
+                except Exception:
+                    pass  # Ignore errors when unpinning
             
-            await self.telegram_client.client(UpdatePinnedMessageRequest(
-                channel=self.output_channel,
-                id=message_id,
-                silent=True
-            ))
+            # Pin the new message
+            success = await self.telegram_client.pin_message(
+                self.output_channel,
+                message_id
+            )
             
-            self.last_posted_message_id = message_id
-            print("📌 Message pinned successfully")
+            if success:
+                self.last_posted_message_id = message_id
+                print("📌 Message pinned successfully")
             
         except Exception as e:
             print(f"⚠️ Could not pin message: {e}")

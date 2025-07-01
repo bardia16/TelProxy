@@ -3,11 +3,11 @@ import asyncio
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 import sys
 import os
+import requests
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from src.telegram_client import TelegramClient
-from telethon.errors import SessionPasswordNeededError, FloodWaitError
 
 
 class TestTelegramClient(unittest.TestCase):
@@ -18,230 +18,159 @@ class TestTelegramClient(unittest.TestCase):
     def tearDown(self):
         self.client = None
     
-    @patch('src.telegram_client.API_ID', '12345')
-    @patch('src.telegram_client.API_HASH', 'test_hash')
-    @patch('src.telegram_client.TelethonClient')
-    def test_initialize_connection_success(self, mock_telethon_client):
-        mock_client_instance = AsyncMock()
-        mock_client_instance.connect = AsyncMock()
-        mock_client_instance.is_user_authorized = AsyncMock(return_value=True)
-        mock_telethon_client.return_value = mock_client_instance
+    @patch('src.telegram_client.Bot')
+    def test_init_with_bot_token(self, mock_bot):
+        with patch('src.telegram_client.BOT_TOKEN', 'test_token'):
+            client = TelegramClient()
+            mock_bot.assert_called_once_with(token='test_token')
+            self.assertTrue(client.use_bot_token)
+    
+    @patch('src.telegram_client.Bot')
+    def test_init_without_bot_token(self, mock_bot):
+        with patch('src.telegram_client.BOT_TOKEN', None):
+            client = TelegramClient()
+            mock_bot.assert_not_called()
+            self.assertFalse(client.use_bot_token)
+    
+    @patch('src.telegram_client.Bot')
+    def test_start_session_with_bot(self, mock_bot):
+        mock_bot_instance = AsyncMock()
+        mock_bot_instance.get_me = AsyncMock(return_value=Mock(username='test_bot'))
+        mock_bot.return_value = mock_bot_instance
         
-        async def run_test():
-            await self.client.initialize_connection()
+        with patch('src.telegram_client.BOT_TOKEN', 'test_token'):
+            client = TelegramClient()
             
-            mock_telethon_client.assert_called_once()
-            mock_client_instance.connect.assert_called_once()
-            mock_client_instance.is_user_authorized.assert_called_once()
-            self.assertTrue(self.client.is_authenticated)
-        
-        asyncio.run(run_test())
-    
-    @patch('src.telegram_client.API_ID', None)
-    @patch('src.telegram_client.API_HASH', None)
-    def test_initialize_connection_missing_credentials(self):
-        async def run_test():
-            with self.assertRaises(ValueError) as context:
-                await self.client.initialize_connection()
-            self.assertIn("API_ID and API_HASH must be configured", str(context.exception))
-        
-        asyncio.run(run_test())
-    
-    @patch('src.telegram_client.API_ID', '12345')
-    @patch('src.telegram_client.API_HASH', 'test_hash')
-    @patch('src.telegram_client.PHONE_NUMBER', '+1234567890')
-    @patch('src.telegram_client.TelethonClient')
-    @patch('builtins.input', side_effect=['123456'])
-    def test_authenticate_user_success(self, mock_input, mock_telethon_client):
-        mock_client_instance = AsyncMock()
-        mock_client_instance.connect = AsyncMock()
-        mock_client_instance.is_user_authorized = AsyncMock(return_value=False)
-        mock_client_instance.send_code_request = AsyncMock()
-        mock_client_instance.sign_in = AsyncMock()
-        mock_telethon_client.return_value = mock_client_instance
-        
-        self.client.client = mock_client_instance
-        
-        async def run_test():
-            await self.client.authenticate_user()
+            async def run_test():
+                await client.start_session()
+                self.assertTrue(client.is_connected)
+                mock_bot_instance.get_me.assert_called_once()
             
-            mock_client_instance.send_code_request.assert_called_once_with('+1234567890')
-            mock_client_instance.sign_in.assert_called_once_with('+1234567890', '123456')
-            self.assertTrue(self.client.is_authenticated)
-        
-        asyncio.run(run_test())
+            asyncio.run(run_test())
     
-    @patch('src.telegram_client.API_ID', '12345')
-    @patch('src.telegram_client.API_HASH', 'test_hash')  
-    @patch('src.telegram_client.PHONE_NUMBER', '+1234567890')
-    @patch('src.telegram_client.TelethonClient')
-    @patch('builtins.input', side_effect=['123456', 'test_password'])
-    def test_authenticate_user_with_2fa(self, mock_input, mock_telethon_client):
-        mock_client_instance = AsyncMock()
-        mock_client_instance.connect = AsyncMock()
-        mock_client_instance.is_user_authorized = AsyncMock(return_value=False)
-        mock_client_instance.send_code_request = AsyncMock()
-        mock_client_instance.sign_in = AsyncMock(side_effect=[SessionPasswordNeededError("2FA required"), None])
-        mock_telethon_client.return_value = mock_client_instance
-        
-        self.client.client = mock_client_instance
-        
-        async def run_test():
-            await self.client.authenticate_user()
+    def test_start_session_without_bot(self):
+        with patch('src.telegram_client.BOT_TOKEN', None):
+            client = TelegramClient()
             
-            self.assertEqual(mock_client_instance.sign_in.call_count, 2)
-            mock_client_instance.sign_in.assert_any_call('+1234567890', '123456')
-            mock_client_instance.sign_in.assert_any_call(password='test_password')
-            self.assertTrue(self.client.is_authenticated)
-        
-        asyncio.run(run_test())
-    
-    @patch('src.telegram_client.PHONE_NUMBER', None)
-    def test_authenticate_user_missing_phone(self):
-        mock_client_instance = AsyncMock()
-        mock_client_instance.is_user_authorized = AsyncMock(return_value=False)
-        self.client.client = mock_client_instance
-        
-        async def run_test():
-            with self.assertRaises(ValueError) as context:
-                await self.client.authenticate_user()
-            self.assertIn("PHONE_NUMBER must be configured", str(context.exception))
-        
-        asyncio.run(run_test())
-    
-    @patch('src.telegram_client.TelethonClient')
-    def test_start_session(self, mock_telethon_client):
-        mock_client_instance = AsyncMock()
-        mock_client_instance.connect = AsyncMock()
-        mock_client_instance.is_user_authorized = AsyncMock(return_value=True)
-        mock_client_instance.start = AsyncMock()
-        mock_telethon_client.return_value = mock_client_instance
-        
-        async def run_test():
-            with patch.object(self.client, 'initialize_connection', new_callable=AsyncMock) as mock_init:
-                with patch.object(self.client, 'authenticate_user', new_callable=AsyncMock) as mock_auth:
-                    self.client.is_authenticated = True
-                    self.client.client = mock_client_instance  # Set the client instance
-                    await self.client.start_session()
-                    
-                    mock_init.assert_called_once()
-                    mock_auth.assert_not_called()  # Already authenticated
-                    mock_client_instance.start.assert_called_once()
-        
-        asyncio.run(run_test())
+            async def run_test():
+                await client.start_session()
+                self.assertTrue(client.is_connected)
+            
+            asyncio.run(run_test())
     
     def test_close_session(self):
-        mock_client_instance = AsyncMock()
-        mock_client_instance.is_connected = Mock(return_value=True)
-        mock_client_instance.disconnect = AsyncMock()
-        self.client.client = mock_client_instance
-        self.client.is_authenticated = True
+        client = TelegramClient()
+        client.is_connected = True
         
         async def run_test():
-            await self.client.close_session()
+            await client.close_session()
+            self.assertFalse(client.is_connected)
+        
+        asyncio.run(run_test())
+    
+    @patch('requests.Session.get')
+    def test_get_channel_messages(self, mock_get):
+        # Create a mock response with HTML content
+        mock_response = Mock()
+        mock_response.raise_for_status = Mock()
+        mock_response.text = '''
+        <div class="tgme_widget_message" data-post="channel/123">
+            <div class="tgme_widget_message_text">Test message</div>
+            <span class="tgme_widget_message_date"><time datetime="2023-01-01T12:00:00+00:00"></time></span>
+        </div>
+        '''
+        mock_get.return_value = mock_response
+        
+        client = TelegramClient()
+        client.is_connected = True
+        
+        async def run_test():
+            messages = await client.get_channel_messages('test_channel')
+            self.assertEqual(len(messages), 1)
+            self.assertEqual(messages[0]['text'], 'Test message')
+            mock_get.assert_called_once_with('https://t.me/s/test_channel')
+        
+        asyncio.run(run_test())
+    
+    @patch('src.telegram_client.Bot')
+    def test_send_message(self, mock_bot):
+        mock_bot_instance = AsyncMock()
+        mock_message = Mock()
+        mock_message.message_id = 123
+        mock_bot_instance.send_message = AsyncMock(return_value=mock_message)
+        mock_bot_instance.get_me = AsyncMock()
+        mock_bot.return_value = mock_bot_instance
+        
+        with patch('src.telegram_client.BOT_TOKEN', 'test_token'):
+            client = TelegramClient()
+            client.is_connected = True
             
-            mock_client_instance.disconnect.assert_called_once()
-            self.assertFalse(self.client.is_authenticated)
-        
-        asyncio.run(run_test())
-    
-    def test_get_channel_entity_success(self):
-        mock_client_instance = AsyncMock()
-        mock_entity = Mock()
-        mock_client_instance.get_entity = AsyncMock(return_value=mock_entity)
-        
-        self.client.client = mock_client_instance
-        self.client.is_authenticated = True
-        
-        async def run_test():
-            result = await self.client.get_channel_entity('https://t.me/test_channel')
+            async def run_test():
+                message_id = await client.send_message('test_channel', 'Test message')
+                self.assertEqual(message_id, 123)
+                mock_bot_instance.send_message.assert_called_once_with(
+                    chat_id='test_channel',
+                    text='Test message',
+                    parse_mode='Markdown'
+                )
             
-            self.assertEqual(result, mock_entity)
-            mock_client_instance.get_entity.assert_called_once_with('https://t.me/test_channel')
-        
-        asyncio.run(run_test())
+            asyncio.run(run_test())
     
-    def test_get_channel_entity_not_authenticated(self):
-        self.client.is_authenticated = False
+    @patch('src.telegram_client.Bot')
+    def test_pin_message(self, mock_bot):
+        mock_bot_instance = AsyncMock()
+        mock_bot_instance.pin_chat_message = AsyncMock()
+        mock_bot_instance.get_me = AsyncMock()
+        mock_bot.return_value = mock_bot_instance
+        
+        with patch('src.telegram_client.BOT_TOKEN', 'test_token'):
+            client = TelegramClient()
+            client.is_connected = True
+            
+            async def run_test():
+                success = await client.pin_message('test_channel', 123)
+                self.assertTrue(success)
+                mock_bot_instance.pin_chat_message.assert_called_once_with(
+                    chat_id='test_channel',
+                    message_id=123,
+                    disable_notification=True
+                )
+            
+            asyncio.run(run_test())
+    
+    def test_get_channel_entity(self):
+        client = TelegramClient()
+        client.is_connected = True
         
         async def run_test():
-            with self.assertRaises(RuntimeError) as context:
-                await self.client.get_channel_entity('https://t.me/test_channel')
-            self.assertIn("Client must be authenticated", str(context.exception))
+            entity = await client.get_channel_entity('https://t.me/test_channel')
+            self.assertEqual(entity['id'], 'test_channel')
+            self.assertEqual(entity['username'], 'test_channel')
         
         asyncio.run(run_test())
     
-    def test_fetch_channel_messages_success(self):
-        mock_client_instance = AsyncMock()
-        mock_messages = [Mock(), Mock(), Mock()]
+    @patch('src.telegram_client.TelegramClient.get_channel_messages')
+    def test_fetch_channel_messages(self, mock_get_messages):
+        mock_get_messages.return_value = [
+            {
+                'id': '123',
+                'channel_name': 'test_channel',
+                'date': '2023-01-01 12:00:00',
+                'text': 'Test message'
+            }
+        ]
         
-        async def mock_iter_messages(*args, **kwargs):
-            for msg in mock_messages:
-                yield msg
-        
-        mock_client_instance.iter_messages = mock_iter_messages
-        
-        self.client.client = mock_client_instance
-        self.client.is_authenticated = True
+        client = TelegramClient()
+        client.is_connected = True
         
         async def run_test():
-            with patch('asyncio.sleep', new_callable=AsyncMock):
-                result = await self.client.fetch_channel_messages(Mock(), limit=100)
-                
-                self.assertEqual(len(result), 3)
-                self.assertEqual(result, mock_messages)
+            channel_entity = {'username': 'test_channel'}
+            messages = await client.fetch_channel_messages(channel_entity)
+            self.assertEqual(len(messages), 1)
+            self.assertEqual(messages[0].id, '123')
+            self.assertEqual(messages[0].message, 'Test message')
         
         asyncio.run(run_test())
-    
-    def test_fetch_channel_messages_flood_wait(self):
-        mock_client_instance = AsyncMock()
-        
-        # Create a proper FloodWaitError mock with seconds attribute
-        flood_error = FloodWaitError("Too many requests")
-        flood_error.seconds = 10
-        
-        async def mock_iter_messages_with_flood(*args, **kwargs):
-            raise flood_error
-            yield  # This will never be reached but makes it an async generator
-        
-        mock_client_instance.iter_messages = mock_iter_messages_with_flood
-        
-        self.client.client = mock_client_instance
-        self.client.is_authenticated = True
-        
-        async def run_test():
-            with patch('src.telegram_client.asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
-                result = await self.client.fetch_channel_messages(Mock(), limit=100)
-                
-                self.assertEqual(result, [])
-                mock_sleep.assert_called_with(10)
-        
-        asyncio.run(run_test())
-    
-    def test_is_connected_true(self):
-        mock_client_instance = Mock()
-        mock_client_instance.is_connected.return_value = True
-        self.client.client = mock_client_instance
-        self.client.is_authenticated = True
-        
-        result = self.client.is_connected()
-        self.assertTrue(result)
-    
-    def test_is_connected_false_no_client(self):
-        self.client.client = None
-        self.client.is_authenticated = True
-        
-        result = self.client.is_connected()
-        self.assertFalse(result)
-    
-    def test_is_connected_false_not_authenticated(self):
-        mock_client_instance = Mock()
-        mock_client_instance.is_connected.return_value = True
-        self.client.client = mock_client_instance
-        self.client.is_authenticated = False
-        
-        result = self.client.is_connected()
-        self.assertFalse(result)
 
 
 if __name__ == '__main__':
