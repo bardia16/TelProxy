@@ -83,6 +83,28 @@ class ProxyScheduler:
                 print("⚠️ No working proxies found this cycle")
                 return
             
+            # Print detailed information about working proxies after validation
+            print("\n📋 Working Proxies (After Validation):")
+            print("-" * 60)
+            print(f"{'Type':<10} {'Server':<30} {'Port':<8} {'Secret/Auth':<20}")
+            print("-" * 60)
+            
+            for i, proxy in enumerate(working_proxies, 1):
+                auth_info = ""
+                if proxy.proxy_type == 'mtproto' and proxy.secret:
+                    auth_info = f"Secret: {proxy.secret[:8]}..." if len(proxy.secret) > 8 else f"Secret: {proxy.secret}"
+                elif proxy.proxy_type == 'socks5' and proxy.username:
+                    auth_info = f"User: {proxy.username}"
+                
+                print(f"{proxy.proxy_type:<10} {proxy.server:<30} {proxy.port:<8} {auth_info:<20}")
+                
+                # Print only first 20 proxies if there are too many
+                if i >= 20 and len(working_proxies) > 20:
+                    print(f"... and {len(working_proxies) - 20} more proxies")
+                    break
+            
+            print("-" * 60)
+            
             print("💾 Saving proxies to local storage...")
             self.proxy_storage.save_proxies_to_database(working_proxies)
             self.proxy_storage.save_proxies_to_json(working_proxies)

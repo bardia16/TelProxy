@@ -101,10 +101,6 @@ class TelegramClient:
                         href = a_tag.get('href')
                         if href:
                             hrefs.append(href)
-                            
-                            # Debug print for proxy links
-                            if 't.me/proxy' in href:
-                                print(f"Found proxy link in href: {href}")
                 
                 # Create message data structure
                 message_data = {

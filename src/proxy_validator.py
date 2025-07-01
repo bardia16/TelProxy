@@ -41,17 +41,17 @@ class ProxyValidator:
     
     async def validate_single_proxy(self, proxy: ProxyData):
         proxy_key = f"{proxy.server}:{proxy.port}"
-        print(f"Testing {proxy.proxy_type} proxy: {proxy_key}")
+        #print(f"Testing {proxy.proxy_type} proxy: {proxy_key}")
         
         try:
             # First try basic connectivity - this is more lenient
             basic_connectivity = await self.create_connection_test(proxy.server, int(proxy.port))
             
             if basic_connectivity:
-                print(f"  {proxy_key}: ✓ Basic connectivity successful")
+                #print(f"  {proxy_key}: ✓ Basic connectivity successful")
                 return True  # Consider the proxy valid if basic connectivity works
             else:
-                print(f"  {proxy_key}: ✗ Failed basic connectivity")
+                #print(f"  {proxy_key}: ✗ Failed basic connectivity")
                 return False
             
         except Exception as e:
@@ -169,10 +169,10 @@ class ProxyValidator:
             return True
             
         except (OSError, asyncio.TimeoutError, ConnectionRefusedError, socket.gaierror) as e:
-            print(f"  Connection test failed: {type(e).__name__}: {e}")
+            #print(f"  Connection test failed: {type(e).__name__}: {e}")
             return False
         except Exception as e:
-            print(f"  Connection test error: {type(e).__name__}: {e}")
+            #print(f"  Connection test error: {type(e).__name__}: {e}")
             return False
     
     def get_validation_status(self, proxy: ProxyData):
