@@ -2,6 +2,7 @@ import re
 import asyncio
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
+from telethon.tl.types import MessageEntityTextUrl, MessageEntityUrl
 from src.telegram_client import TelegramClient
 from config.channels import TELEGRAM_CHANNELS
 
@@ -68,22 +69,26 @@ class ChannelScraper:
             if message.date < cutoff_date:
                 continue
             
-            message_text = self.extract_message_text(message)
-            if message_text and self.is_message_containing_proxy(message_text):
+            message_data = self.extract_full_message_data(message)
+            if message_data['combined_text'] and self.is_message_containing_proxy(message_data['combined_text']):
                 relevant_messages.append({
                     'id': message.id,
                     'date': message.date,
-                    'text': message_text,
+                    'text': message_data['text'],
+                    'urls': message_data['urls'],
+                    'combined_text': message_data['combined_text'],
                     'channel': message.chat.username if hasattr(message.chat, 'username') else 'unknown'
                 })
         
         return relevant_messages
     
-    def extract_message_text(self, message: Any):
+    def extract_full_message_data(self, message: Any):
         if not message:
-            return ""
+            return {'text': '', 'urls': [], 'combined_text': ''}
         
         text = ""
+        urls = []
+        
         if hasattr(message, 'message') and message.message:
             text = message.message
         elif hasattr(message, 'text') and message.text:
@@ -91,10 +96,47 @@ class ChannelScraper:
         
         if hasattr(message, 'entities') and message.entities:
             for entity in message.entities:
-                if hasattr(entity, 'url') and entity.url:
-                    text += f" {entity.url}"
+                if isinstance(entity, MessageEntityTextUrl) and entity.url:
+                    urls.append(entity.url)
+                elif isinstance(entity, MessageEntityUrl) and hasattr(entity, 'url') and entity.url:
+                    urls.append(entity.url)
+                elif hasattr(entity, 'url') and entity.url:
+                    urls.append(entity.url)
         
-        return text.strip()
+        if hasattr(message, 'reply_markup') and message.reply_markup:
+            if hasattr(message.reply_markup, 'rows'):
+                for row in message.reply_markup.rows:
+                    for button in row.buttons:
+                        if hasattr(button, 'url') and button.url:
+                            urls.append(button.url)
+                        elif hasattr(button, 'text') and button.text:
+                            text += f" {button.text}"
+        
+        if hasattr(message, 'buttons') and message.buttons:
+            for button_row in message.buttons:
+                for button in button_row:
+                    if hasattr(button, 'url') and button.url:
+                        urls.append(button.url)
+                    elif hasattr(button, 'text') and button.text:
+                        text += f" {button.text}"
+        
+        if hasattr(message, 'web_preview') and message.web_preview:
+            if hasattr(message.web_preview, 'url'):
+                urls.append(message.web_preview.url)
+        
+        combined_text = text
+        for url in urls:
+            combined_text += f" {url}"
+        
+        return {
+            'text': text.strip(),
+            'urls': urls,
+            'combined_text': combined_text.strip()
+        }
+    
+    def extract_message_text(self, message: Any):
+        message_data = self.extract_full_message_data(message)
+        return message_data['combined_text']
     
     def is_message_containing_proxy(self, message_text: str):
         if not message_text:
