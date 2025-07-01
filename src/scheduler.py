@@ -128,6 +128,14 @@ class ProxyScheduler:
                 print(f"Matched keywords: {', '.join(msg['matched_keywords'])}")
             if 'matched_patterns' in msg:
                 print(f"Matched patterns: {', '.join(msg['matched_patterns'])}")
+            
+            # Print extracted proxy links
+            if 'proxy_links' in msg and msg['proxy_links']:
+                print(f"Proxy links found: {len(msg['proxy_links'])}")
+                for j, link in enumerate(msg['proxy_links'][:3]):
+                    print(f"  {j+1}. {link}")
+                if len(msg['proxy_links']) > 3:
+                    print(f"  ... and {len(msg['proxy_links']) - 3} more links")
                 
             print("-" * 40)
         
