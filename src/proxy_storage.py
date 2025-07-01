@@ -231,47 +231,85 @@ class ProxyStorage:
             return None
         
         try:
-            message = self._format_proxy_message(proxies)
-            
-            message_id = await self.telegram_client.send_message(
-                self.output_channel, message
-            )
-            
-            if message_id:
-                await self._pin_latest_message(message_id)
-                self._record_posting_history(message_id, len(proxies))
-                print(f"✅ Posted {len(proxies)} proxies to Telegram channel")
-            
-            return message_id
+            # Split proxies into multiple messages if needed
+            max_proxies_per_message = 30
+            if len(proxies) > max_proxies_per_message:
+                print(f"Too many proxies ({len(proxies)}), splitting into multiple messages")
+                
+                # Group proxies by type for better organization
+                by_type = {}
+                for proxy in proxies:
+                    if proxy.proxy_type not in by_type:
+                        by_type[proxy.proxy_type] = []
+                    by_type[proxy.proxy_type].append(proxy)
+                
+                # Send one message per proxy type
+                message_ids = []
+                for proxy_type, proxy_list in by_type.items():
+                    message = self._format_proxy_message(proxy_list, single_type=True)
+                    message_id = await self.telegram_client.send_message(
+                        self.output_channel, message
+                    )
+                    if message_id:
+                        message_ids.append(message_id)
+                        self._record_posting_history(message_id, len(proxy_list))
+                        print(f"✅ Posted {len(proxy_list)} {proxy_type} proxies to Telegram channel")
+                
+                # Pin only the first message
+                if message_ids:
+                    await self._pin_latest_message(message_ids[0])
+                    
+                return message_ids[0] if message_ids else None
+            else:
+                # Send all proxies in one message
+                message = self._format_proxy_message(proxies)
+                message_id = await self.telegram_client.send_message(
+                    self.output_channel, message
+                )
+                
+                if message_id:
+                    await self._pin_latest_message(message_id)
+                    self._record_posting_history(message_id, len(proxies))
+                    print(f"✅ Posted {len(proxies)} proxies to Telegram channel")
+                
+                return message_id
             
         except Exception as e:
             print(f"❌ Error posting to Telegram: {e}")
             return None
     
-    def _format_proxy_message(self, proxies: List[ProxyData]):
+    def _format_proxy_message(self, proxies: List[ProxyData], single_type=False):
         now = datetime.now(timezone.utc)
         timestamp = now.strftime('%Y-%m-%d %H:%M UTC')
         
         message_lines = [
-            f"🔑 **Hourly Proxy Update** [{timestamp}]",
+            f"🔑 **Fresh Telegram Proxies** [{timestamp}]",
             f"📊 **Total Proxies:** {len(proxies)}",
             ""
         ]
         
+        # Group proxies by type
         by_type = {}
         for proxy in proxies:
             if proxy.proxy_type not in by_type:
                 by_type[proxy.proxy_type] = []
             by_type[proxy.proxy_type].append(proxy)
         
+        # Process each proxy type
         for proxy_type, proxy_list in by_type.items():
             message_lines.append(f"**{proxy_type.upper()} ({len(proxy_list)}):**")
-            for proxy in proxy_list:
-                if proxy.original_url:
-                    message_lines.append(f"• `{proxy.original_url}`")
-                else:
-                    url = self._reconstruct_proxy_url(proxy)
-                    message_lines.append(f"• `{url}`")
+            
+            # Create a table-like format for each proxy type
+            for i, proxy in enumerate(proxy_list, 1):
+                # Create a compact display name
+                display_name = f"{i}. {proxy.server}"
+                
+                # Create a hyperlink with the full proxy URL
+                url = self._reconstruct_proxy_url(proxy)
+                
+                # Add the hyperlink to the message
+                message_lines.append(f"[{display_name}]({url}) (Port: {proxy.port})")
+            
             message_lines.append("")
         
         message_lines.append("🔄 *Next update in 1 hour*")
