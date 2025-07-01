@@ -2,6 +2,7 @@ import re
 import urllib.parse
 from typing import List, Dict, Optional
 from dataclasses import dataclass
+import html
 
 
 @dataclass
@@ -20,28 +21,59 @@ class ProxyExtractor:
     def __init__(self):
         # Main pattern to extract t.me/proxy links
         self.telegram_proxy_pattern = r'(?:@)?(?:https?://)?t\.me/proxy\?server=([^&\s]+)&port=(\d+)&secret=([^&\s]+)'
-        
-        # Additional pattern for hypertext links
-        self.hypertext_pattern = r'href=["\']((?:https?://)?t\.me/proxy\?[^"\']+)["\']'
     
-    def extract_all_proxies(self, text: str):
-        if not text:
+    def extract_all_proxies(self, hrefs: List[str], text: str = ""):
+        """Extract proxies from a list of href values and optional text"""
+        if not hrefs and not text:
             return []
-        
-        # Clean up text - replace HTML entities and normalize spaces
-        cleaned_text = text.replace('&amp;', '&')
-        
-        # Extract hypertext links first
-        hypertext_links = self.extract_hypertext_links(cleaned_text)
         
         all_proxies = []
         
-        # Process hypertext links
-        for link in hypertext_links:
+        # Process all href values
+        for href in hrefs:
             try:
-                # Extract parameters from the hypertext link
-                match = re.search(self.telegram_proxy_pattern, link)
-                if match:
+                # Unescape HTML entities in the href
+                href = html.unescape(href)
+                
+                # Check if this is a t.me/proxy link
+                if 't.me/proxy' in href:
+                    match = re.search(self.telegram_proxy_pattern, href)
+                    if match:
+                        server = match.group(1)
+                        port = match.group(2)
+                        secret = match.group(3)
+                        
+                        # URL decode the secret if it's URL encoded
+                        try:
+                            decoded_secret = urllib.parse.unquote(secret)
+                            if decoded_secret != secret:
+                                secret = decoded_secret
+                        except Exception:
+                            pass
+                        
+                        # Clean up server name - remove any trailing "Port" text
+                        server = re.sub(r'[Pp]ort$', '', server).strip()
+                        
+                        full_url = f"https://t.me/proxy?server={server}&port={port}&secret={secret}"
+                        
+                        proxy = ProxyData(
+                            proxy_type='mtproto',  # All t.me/proxy links are MTProto
+                            server=server,
+                            port=port,
+                            secret=secret,
+                            original_url=full_url
+                        )
+                        all_proxies.append(proxy)
+                        print(f"Found proxy in href: {server}:{port}")
+            except Exception as e:
+                print(f"Error parsing href '{href}': {type(e).__name__}: {e}")
+        
+        # Also check text content for plain text links
+        if text:
+            cleaned_text = html.unescape(text)
+            matches = re.finditer(self.telegram_proxy_pattern, cleaned_text, re.IGNORECASE)
+            for match in matches:
+                try:
                     server = match.group(1)
                     port = match.group(2)
                     secret = match.group(3)
@@ -54,53 +86,22 @@ class ProxyExtractor:
                     except Exception:
                         pass
                     
-                    # Clean up server name
+                    # Clean up server name - remove any trailing "Port" text
                     server = re.sub(r'[Pp]ort$', '', server).strip()
                     
                     full_url = f"https://t.me/proxy?server={server}&port={port}&secret={secret}"
                     
                     proxy = ProxyData(
-                        proxy_type='mtproto',
+                        proxy_type='mtproto',  # All t.me/proxy links are MTProto
                         server=server,
                         port=port,
                         secret=secret,
                         original_url=full_url
                     )
                     all_proxies.append(proxy)
-            except Exception as e:
-                print(f"Error parsing hypertext link: {type(e).__name__}: {e}")
-        
-        # Extract all t.me/proxy links from plain text
-        matches = re.finditer(self.telegram_proxy_pattern, cleaned_text, re.IGNORECASE)
-        for match in matches:
-            try:
-                server = match.group(1)
-                port = match.group(2)
-                secret = match.group(3)
-                
-                # URL decode the secret if it's URL encoded
-                try:
-                    decoded_secret = urllib.parse.unquote(secret)
-                    if decoded_secret != secret:
-                        secret = decoded_secret
-                except Exception:
-                    pass
-                
-                # Clean up server name - remove any trailing "Port" text
-                server = re.sub(r'[Pp]ort$', '', server).strip()
-                
-                full_url = f"https://t.me/proxy?server={server}&port={port}&secret={secret}"
-                
-                proxy = ProxyData(
-                    proxy_type='mtproto',  # All t.me/proxy links are MTProto
-                    server=server,
-                    port=port,
-                    secret=secret,
-                    original_url=full_url
-                )
-                all_proxies.append(proxy)
-            except Exception as e:
-                print(f"Error parsing proxy URL: {type(e).__name__}: {e}")
+                    print(f"Found proxy in text: {server}:{port}")
+                except Exception as e:
+                    print(f"Error parsing text match: {type(e).__name__}: {e}")
         
         # Deduplicate proxies by server:port
         unique_proxies = []
@@ -112,29 +113,18 @@ class ProxyExtractor:
                 seen_servers.add(server_port)
                 unique_proxies.append(proxy)
         
-        print(f"Found {len(unique_proxies)} potential proxies in text")
+        print(f"Found {len(unique_proxies)} unique proxies")
         
+        # Validate proxy format
         validated_proxies = []
         for proxy in unique_proxies:
             if self.validate_proxy_format(proxy):
                 validated_proxies.append(proxy)
             else:
-                print(f"Invalid proxy format: {proxy.server}:{proxy.port} ({proxy.proxy_type})")
+                print(f"Invalid proxy format: {proxy.server}:{proxy.port}")
         
         print(f"Validated {len(validated_proxies)} proxies with correct format")
         return validated_proxies
-    
-    def extract_hypertext_links(self, text: str):
-        """Extract links from hypertext/HTML content"""
-        links = []
-        
-        # Find all href attributes that contain t.me/proxy
-        matches = re.finditer(self.hypertext_pattern, text, re.IGNORECASE)
-        for match in matches:
-            link = match.group(1)
-            links.append(link)
-        
-        return links
     
     def validate_proxy_format(self, proxy_data: ProxyData):
         if not proxy_data or not proxy_data.server or not proxy_data.port:

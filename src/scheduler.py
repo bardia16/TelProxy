@@ -42,7 +42,11 @@ class ProxyScheduler:
             print("🔍 Extracting proxies from messages...")
             all_proxies = []
             for message in messages:
-                proxies = self.proxy_extractor.extract_all_proxies(message['combined_text'])
+                # Extract proxies from href attributes and text content
+                proxies = self.proxy_extractor.extract_all_proxies(
+                    hrefs=message.get('hrefs', []),
+                    text=message.get('combined_text', '')
+                )
                 all_proxies.extend(proxies)
             
             if not all_proxies:
@@ -121,22 +125,20 @@ class ProxyScheduler:
             print(f"Message {i+1}/{min(max_messages, len(messages))} from {msg['channel']} on {msg['date'].strftime('%Y-%m-%d')}:")
             print("-" * 40)
             print(f"Text: {msg['text'][:200]}..." if len(msg['text']) > 200 else f"Text: {msg['text']}")
-            print(f"URLs: {', '.join(msg['urls'][:5])}" + ("..." if len(msg['urls']) > 5 else ""))
             
-            # Print why this message was considered relevant
-            if 'matched_keywords' in msg:
-                print(f"Matched keywords: {', '.join(msg['matched_keywords'])}")
-            if 'matched_patterns' in msg:
-                print(f"Matched patterns: {', '.join(msg['matched_patterns'])}")
+            # Print HTML content if available
+            if 'html' in msg and msg['html']:
+                html_preview = msg['html'][:100] + "..." if len(msg['html']) > 100 else msg['html']
+                print(f"HTML: {html_preview}")
             
-            # Print extracted proxy links
-            if 'proxy_links' in msg and msg['proxy_links']:
-                print(f"Proxy links found: {len(msg['proxy_links'])}")
-                for j, link in enumerate(msg['proxy_links'][:3]):
-                    print(f"  {j+1}. {link}")
-                if len(msg['proxy_links']) > 3:
-                    print(f"  ... and {len(msg['proxy_links']) - 3} more links")
-                
+            # Print href attributes
+            if 'hrefs' in msg and msg['hrefs']:
+                print(f"Href attributes: {len(msg['hrefs'])}")
+                for j, href in enumerate(msg['hrefs'][:3]):
+                    print(f"  {j+1}. {href[:100]}..." if len(href) > 100 else f"  {j+1}. {href}")
+                if len(msg['hrefs']) > 3:
+                    print(f"  ... and {len(msg['hrefs']) - 3} more href attributes")
+            
             print("-" * 40)
         
         if len(messages) > max_messages:

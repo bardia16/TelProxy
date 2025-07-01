@@ -1,7 +1,9 @@
 import re
 import asyncio
+import html
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
+from bs4 import BeautifulSoup
 from src.telegram_client import TelegramClient
 from config.channels import TELEGRAM_CHANNELS
 
@@ -17,8 +19,6 @@ class ChannelScraper:
             'ip:', 'host:', 'address:', 'telegram proxy', 'vpn', 'connect',
             'обход блокировки', 'прокси', 'телеграм', 'подключение'  # Russian keywords
         ]
-        # Main pattern to match t.me/proxy links
-        self.telegram_proxy_pattern = r'(?:@)?(?:https?://)?t\.me/proxy\?server=([^&\s]+)&port=(\d+)&secret=([^&\s]+)'
     
     async def scrape_all_channels(self):
         all_messages = []
@@ -72,76 +72,30 @@ class ChannelScraper:
             if message.date < cutoff_date:
                 continue
             
+            # Extract all <a> tags and their href attributes
             message_data = self.extract_full_message_data(message)
             
-            # First check for t.me/proxy links directly
-            proxy_links = self.extract_proxy_links(message_data['combined_text'])
-            
-            if proxy_links:
-                # Message contains direct proxy links
-                matched_keywords = self.get_matched_keywords(message_data['combined_text'])
-                
+            # Only include messages with href attributes or proxy keywords
+            if message_data['hrefs'] or self.is_message_containing_proxy(message_data['combined_text']):
                 relevant_messages.append({
                     'id': message.id,
                     'date': message.date,
                     'text': message_data['text'],
-                    'urls': message_data['urls'],
+                    'html': message_data['html'],
+                    'hrefs': message_data['hrefs'],
                     'combined_text': message_data['combined_text'],
-                    'channel': message.chat.username if hasattr(message.chat, 'username') else 'unknown',
-                    'matched_keywords': matched_keywords,
-                    'proxy_links': proxy_links
-                })
-            # Fallback to keyword matching if no direct links found
-            elif message_data['combined_text'] and self.is_message_containing_proxy(message_data['combined_text']):
-                matched_keywords = self.get_matched_keywords(message_data['combined_text'])
-                
-                relevant_messages.append({
-                    'id': message.id,
-                    'date': message.date,
-                    'text': message_data['text'],
-                    'urls': message_data['urls'],
-                    'combined_text': message_data['combined_text'],
-                    'channel': message.chat.username if hasattr(message.chat, 'username') else 'unknown',
-                    'matched_keywords': matched_keywords,
-                    'proxy_links': []
+                    'channel': message.chat.username if hasattr(message.chat, 'username') else 'unknown'
                 })
         
         return relevant_messages
     
-    def extract_proxy_links(self, text: str):
-        """Extract all t.me/proxy links from the text"""
-        if not text:
-            return []
-        
-        # Clean up text - replace HTML entities
-        cleaned_text = text.replace('&amp;', '&')
-        
-        links = []
-        matches = re.finditer(self.telegram_proxy_pattern, cleaned_text, re.IGNORECASE)
-        for match in matches:
-            try:
-                server = match.group(1)
-                port = match.group(2)
-                secret = match.group(3)
-                full_url = f"https://t.me/proxy?server={server}&port={port}&secret={secret}"
-                links.append(full_url)
-            except Exception:
-                pass
-        
-        return links
-    
-    def get_matched_keywords(self, text: str):
-        """Return the keywords that matched in this text"""
-        text_lower = text.lower()
-        return [keyword for keyword in self.proxy_keywords if keyword in text_lower]
-    
     def extract_full_message_data(self, message: Any):
         if not message:
-            return {'text': '', 'urls': [], 'combined_text': ''}
+            return {'text': '', 'html': '', 'hrefs': [], 'combined_text': ''}
         
         text = ""
-        urls = []
-        html = ""
+        html_content = ""
+        hrefs = []
         
         if hasattr(message, 'message') and message.message:
             text = message.message
@@ -150,38 +104,33 @@ class ChannelScraper:
         
         # Get HTML content if available
         if hasattr(message, 'html') and message.html:
-            html = message.html
+            html_content = message.html
+            
+            # Extract all href attributes from <a> tags in HTML
+            soup = BeautifulSoup(html_content, 'html.parser')
+            for a_tag in soup.find_all('a'):
+                href = a_tag.get('href')
+                if href:
+                    hrefs.append(href)
         
-        # Get links if available
-        if hasattr(message, 'links') and message.links:
-            urls.extend(message.links)
-        else:
-            # Extract URLs from the message text using regex
-            if text:
-                url_pattern = r'https?://\S+|t\.me/\S+|tg://\S+'
-                found_urls = re.findall(url_pattern, text)
-                urls.extend(found_urls)
+        # If no BeautifulSoup extraction, try with regex as fallback
+        if not hrefs and html_content:
+            href_pattern = r'<a [^>]*href=["\']([^"\']+)["\'][^>]*>'
+            href_matches = re.finditer(href_pattern, html_content, re.IGNORECASE)
+            for match in href_matches:
+                href = match.group(1)
+                if href:
+                    hrefs.append(href)
         
-        # Combine all text sources
-        combined_text = text
-        for url in urls:
-            if url not in text:  # Avoid duplication
-                combined_text += f" {url}"
-        
-        # Add HTML content to combined text
-        if html and html not in combined_text:
-            combined_text += f" {html}"
+        # Combine all text sources for keyword matching
+        combined_text = text + " " + html_content
         
         return {
             'text': text.strip(),
-            'urls': urls,
-            'html': html,
+            'html': html_content,
+            'hrefs': hrefs,
             'combined_text': combined_text.strip()
         }
-    
-    def extract_message_text(self, message: Any):
-        message_data = self.extract_full_message_data(message)
-        return message_data['combined_text']
     
     def is_message_containing_proxy(self, message_text: str):
         if not message_text:

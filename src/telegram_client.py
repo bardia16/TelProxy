@@ -86,7 +86,7 @@ class TelegramClient:
                 text_div = container.find('div', class_='tgme_widget_message_text')
                 text = text_div.get_text() if text_div else ''
                 
-                # Get the HTML content of the message
+                # Get the full HTML content of the message
                 html_content = str(text_div) if text_div else ''
                 
                 # Get message date
@@ -94,13 +94,17 @@ class TelegramClient:
                 date_str = date_span.find('time').get('datetime') if date_span and date_span.find('time') else ''
                 date_obj = datetime.fromisoformat(date_str.replace('Z', '+00:00')) if date_str else datetime.now()
                 
-                # Extract links
-                links = []
+                # Extract all href attributes from a tags
+                hrefs = []
                 if text_div:
                     for a_tag in text_div.find_all('a'):
                         href = a_tag.get('href')
                         if href:
-                            links.append(href)
+                            hrefs.append(href)
+                            
+                            # Debug print for proxy links
+                            if 't.me/proxy' in href:
+                                print(f"Found proxy link in href: {href}")
                 
                 # Create message data structure
                 message_data = {
@@ -110,8 +114,8 @@ class TelegramClient:
                     'date': date_obj.strftime('%Y-%m-%d %H:%M:%S'),
                     'text': text,
                     'html': html_content,
-                    'links': links,
-                    'combined_text': text + ' ' + ' '.join(links) + ' ' + html_content
+                    'hrefs': hrefs,
+                    'combined_text': text + ' ' + html_content
                 }
                 
                 messages.append(message_data)
@@ -215,7 +219,7 @@ class TelegramClient:
                 message.date = datetime.strptime(msg['date'], '%Y-%m-%d %H:%M:%S')
                 message.message = msg['text']
                 message.html = msg['html']
-                message.links = msg['links']
+                message.hrefs = msg['hrefs']
                 
                 # Add chat attribute
                 message.chat = type('Chat', (), {})
