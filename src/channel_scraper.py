@@ -141,26 +141,41 @@ class ChannelScraper:
         
         text = ""
         urls = []
+        html = ""
         
         if hasattr(message, 'message') and message.message:
             text = message.message
         elif hasattr(message, 'text') and message.text:
             text = message.text
         
-        # Extract URLs from the message text using regex
-        if text:
-            url_pattern = r'https?://\S+|t\.me/\S+|tg://\S+'
-            found_urls = re.findall(url_pattern, text)
-            urls.extend(found_urls)
+        # Get HTML content if available
+        if hasattr(message, 'html') and message.html:
+            html = message.html
         
+        # Get links if available
+        if hasattr(message, 'links') and message.links:
+            urls.extend(message.links)
+        else:
+            # Extract URLs from the message text using regex
+            if text:
+                url_pattern = r'https?://\S+|t\.me/\S+|tg://\S+'
+                found_urls = re.findall(url_pattern, text)
+                urls.extend(found_urls)
+        
+        # Combine all text sources
         combined_text = text
         for url in urls:
             if url not in text:  # Avoid duplication
                 combined_text += f" {url}"
         
+        # Add HTML content to combined text
+        if html and html not in combined_text:
+            combined_text += f" {html}"
+        
         return {
             'text': text.strip(),
             'urls': urls,
+            'html': html,
             'combined_text': combined_text.strip()
         }
     

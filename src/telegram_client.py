@@ -86,6 +86,9 @@ class TelegramClient:
                 text_div = container.find('div', class_='tgme_widget_message_text')
                 text = text_div.get_text() if text_div else ''
                 
+                # Get the HTML content of the message
+                html_content = str(text_div) if text_div else ''
+                
                 # Get message date
                 date_span = container.find('span', class_='tgme_widget_message_date')
                 date_str = date_span.find('time').get('datetime') if date_span and date_span.find('time') else ''
@@ -106,7 +109,9 @@ class TelegramClient:
                     'channel_name': channel_name,
                     'date': date_obj.strftime('%Y-%m-%d %H:%M:%S'),
                     'text': text,
-                    'combined_text': text + ' ' + ' '.join(links)
+                    'html': html_content,
+                    'links': links,
+                    'combined_text': text + ' ' + ' '.join(links) + ' ' + html_content
                 }
                 
                 messages.append(message_data)
@@ -209,6 +214,8 @@ class TelegramClient:
                 message.id = msg['id']
                 message.date = datetime.strptime(msg['date'], '%Y-%m-%d %H:%M:%S')
                 message.message = msg['text']
+                message.html = msg['html']
+                message.links = msg['links']
                 
                 # Add chat attribute
                 message.chat = type('Chat', (), {})
