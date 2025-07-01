@@ -48,7 +48,28 @@ class ProxyScheduler:
             
             print(f"✅ Extracted {len(all_proxies)} total proxies")
             
-            print("🔧 Validating proxy connectivity...")
+            # Print detailed information about each found proxy
+            print("\n📋 Found Proxies (Before Validation):")
+            print("-" * 60)
+            print(f"{'Type':<10} {'Server':<30} {'Port':<8} {'Secret/Auth':<20}")
+            print("-" * 60)
+            
+            for i, proxy in enumerate(all_proxies, 1):
+                auth_info = ""
+                if proxy.proxy_type == 'mtproto' and proxy.secret:
+                    auth_info = f"Secret: {proxy.secret[:8]}..." if len(proxy.secret) > 8 else f"Secret: {proxy.secret}"
+                elif proxy.proxy_type == 'socks5' and proxy.username:
+                    auth_info = f"User: {proxy.username}"
+                
+                print(f"{proxy.proxy_type:<10} {proxy.server:<30} {proxy.port:<8} {auth_info:<20}")
+                
+                # Print only first 20 proxies if there are too many
+                if i >= 20 and len(all_proxies) > 20:
+                    print(f"... and {len(all_proxies) - 20} more proxies")
+                    break
+            
+            print("-" * 60)
+            print("\n🔧 Validating proxy connectivity...")
             working_proxies = await self.proxy_validator.validate_all_proxies(all_proxies)
             
             if not working_proxies:
