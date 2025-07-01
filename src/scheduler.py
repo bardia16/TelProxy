@@ -36,6 +36,9 @@ class ProxyScheduler:
                 print("ℹ️ No relevant messages found this cycle")
                 return
             
+            # Debug: Print the content of relevant messages
+            self.debug_print_relevant_messages(messages)
+            
             print("🔍 Extracting proxies from messages...")
             all_proxies = []
             for message in messages:
@@ -108,6 +111,30 @@ class ProxyScheduler:
         finally:
             await self.telegram_client.close_session()
             print(f"🏁 Hourly cycle completed at {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}\n")
+    
+    def debug_print_relevant_messages(self, messages, max_messages=5):
+        """Print the content of relevant messages for debugging purposes"""
+        print("\n🔍 DEBUG: Sample of Relevant Messages:")
+        print("-" * 60)
+        
+        for i, msg in enumerate(messages[:max_messages]):
+            print(f"Message {i+1}/{min(max_messages, len(messages))} from {msg['channel']} on {msg['date'].strftime('%Y-%m-%d')}:")
+            print("-" * 40)
+            print(f"Text: {msg['text'][:200]}..." if len(msg['text']) > 200 else f"Text: {msg['text']}")
+            print(f"URLs: {', '.join(msg['urls'][:5])}" + ("..." if len(msg['urls']) > 5 else ""))
+            
+            # Print why this message was considered relevant
+            if 'matched_keywords' in msg:
+                print(f"Matched keywords: {', '.join(msg['matched_keywords'])}")
+            if 'matched_patterns' in msg:
+                print(f"Matched patterns: {', '.join(msg['matched_patterns'])}")
+                
+            print("-" * 40)
+        
+        if len(messages) > max_messages:
+            print(f"... and {len(messages) - max_messages} more messages")
+        
+        print("-" * 60)
     
     def schedule_hourly_runs(self):
         schedule.every(SCHEDULER_INTERVAL_HOURS).hours.do(

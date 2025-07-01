@@ -13,7 +13,9 @@ class ChannelScraper:
         self.target_channels = TELEGRAM_CHANNELS
         self.proxy_keywords = [
             'proxy', 'mtproto', 'socks5', 'socks', 'http', 'https',
-            'tg://', 't.me/proxy', 't.me/socks', 'server', 'port', 'secret'
+            'tg://', 't.me/proxy', 't.me/socks', 'server', 'port', 'secret',
+            'ip:', 'host:', 'address:', 'telegram proxy', 'vpn', 'connect',
+            'обход блокировки', 'прокси', 'телеграм', 'подключение'  # Russian keywords
         ]
     
     async def scrape_all_channels(self):
@@ -70,16 +72,49 @@ class ChannelScraper:
             
             message_data = self.extract_full_message_data(message)
             if message_data['combined_text'] and self.is_message_containing_proxy(message_data['combined_text']):
+                # Log why this message was considered relevant
+                matched_keywords = self.get_matched_keywords(message_data['combined_text'])
+                matched_patterns = self.get_matched_patterns(message_data['combined_text'])
+                
                 relevant_messages.append({
                     'id': message.id,
                     'date': message.date,
                     'text': message_data['text'],
                     'urls': message_data['urls'],
                     'combined_text': message_data['combined_text'],
-                    'channel': message.chat.username if hasattr(message.chat, 'username') else 'unknown'
+                    'channel': message.chat.username if hasattr(message.chat, 'username') else 'unknown',
+                    'matched_keywords': matched_keywords,
+                    'matched_patterns': matched_patterns
                 })
         
         return relevant_messages
+    
+    def get_matched_keywords(self, text: str):
+        """Return the keywords that matched in this text"""
+        text_lower = text.lower()
+        return [keyword for keyword in self.proxy_keywords if keyword in text_lower]
+    
+    def get_matched_patterns(self, text: str):
+        """Return the patterns that matched in this text"""
+        matched = []
+        proxy_patterns = [
+            r'tg://proxy\?',
+            r'tg://socks\?',
+            r'tg://http\?',
+            r't\.me/proxy\?',
+            r't\.me/socks\?',
+            r'server=[\w\.]',
+            r'port=\d+',
+            r'secret=[a-fA-F0-9]+',
+            r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+',
+            r'[a-zA-Z0-9][a-zA-Z0-9\.\-]+\.[a-zA-Z]{2,}:\d{2,5}'  # domain:port
+        ]
+        
+        for pattern in proxy_patterns:
+            if re.search(pattern, text, re.IGNORECASE):
+                matched.append(pattern)
+        
+        return matched
     
     def extract_full_message_data(self, message: Any):
         if not message:
@@ -133,7 +168,8 @@ class ChannelScraper:
             r'server=[\w\.]',
             r'port=\d+',
             r'secret=[a-fA-F0-9]+',
-            r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+'
+            r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+',
+            r'[a-zA-Z0-9][a-zA-Z0-9\.\-]+\.[a-zA-Z]{2,}:\d{2,5}'  # domain:port
         ]
         
         for pattern in proxy_patterns:

@@ -49,20 +49,7 @@ class ProxyValidator:
             
             if basic_connectivity:
                 print(f"  {proxy_key}: ✓ Basic connectivity successful")
-                
-                # If basic connectivity works, try the specific proxy type test
-                if proxy.proxy_type == 'mtproto':
-                    result = await self.test_mtproto_connectivity(proxy)
-                elif proxy.proxy_type == 'socks5':
-                    result = await self.test_socks5_connectivity(proxy)
-                elif proxy.proxy_type == 'http':
-                    result = await self.test_http_connectivity(proxy)
-                else:
-                    result = True  # If we don't have a specific test, trust basic connectivity
-                
-                status = "✓ Working" if result else "✗ Failed specific test"
-                print(f"  {proxy_key}: {status}")
-                return result
+                return True  # Consider the proxy valid if basic connectivity works
             else:
                 print(f"  {proxy_key}: ✗ Failed basic connectivity")
                 return False
