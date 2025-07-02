@@ -315,14 +315,16 @@ class ProxyStorage:
         timestamp = now.strftime('%Y-%m-%d %H:%M UTC')
         
         message_lines = [
-            f"🔑 **Fresh Telegram Proxies** [{timestamp}]",
-            f"📊 **Total:** {len(proxies)}"
+            "🔑 **Fresh Telegram Proxies**",
+            f"📅 {timestamp} • 📊 **Total: {len(proxies)}**"
         ]
         
         if part_info:
             message_lines.append(f"📑 **{part_info}**")
             
-        message_lines.append("⚡ *Sorted by ping (fastest first)*")
+        message_lines.append("⚡ **Sorted by ping (fastest first)**")
+        message_lines.append("")
+        message_lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         message_lines.append("")
         
         # Group proxies by type
@@ -337,50 +339,49 @@ class ProxyStorage:
             for proxy_type in by_type:
                 by_type[proxy_type].sort(key=lambda p: validator.get_proxy_ping(p))
         
-        # Process each proxy type with continuous numbering
-        current_number = start_number
+        # Process each proxy type with card-style formatting
         for proxy_type, proxy_list in by_type.items():
-            message_lines.append(f"**{proxy_type.upper()} ({len(proxy_list)}):**")
+            # Add emoji based on proxy type
+            type_emoji = {
+                'mtproto': '🚀',
+                'socks5': '🔌', 
+                'http': '🌐'
+            }.get(proxy_type.lower(), '📡')
             
-            # Create a compact grid layout with ping info
-            grid = []
-            current_row = []
+            message_lines.append(f"{type_emoji} **{proxy_type.upper()}** ({len(proxy_list)} proxies)")
             
+            # Create ping display grid
+            ping_row = []
             for proxy in proxy_list:
-                # Create display name with ping info
                 if validator:
                     ping = validator.get_proxy_ping(proxy)
                     if ping != float('inf'):
                         ping_ms = int(ping * 1000)
-                        display_name = f"{current_number}({ping_ms}ms)"
+                        # Create clickable ping with proxy URL
+                        url = self._reconstruct_proxy_url(proxy)
+                        ping_display = f"[⚡ {ping_ms}ms]({url})"
                     else:
-                        display_name = f"{current_number}"
+                        url = self._reconstruct_proxy_url(proxy)
+                        ping_display = f"[⚡ N/A]({url})"
                 else:
-                    display_name = f"{current_number}"
+                    url = self._reconstruct_proxy_url(proxy)
+                    ping_display = f"[⚡ --]({url})"
                 
-                # Create a hyperlink with the full proxy URL
-                url = self._reconstruct_proxy_url(proxy)
+                ping_row.append(ping_display)
                 
-                # Add the hyperlink to the current row
-                current_row.append(f"[{display_name}]({url})")
-                
-                # Increment the global counter
-                current_number += 1
-                
-                # Start a new row after every 4 items (reduced from 5 to accommodate ping info)
-                if len(current_row) == 4:
-                    grid.append(" | ".join(current_row))
-                    current_row = []
+                # Add row break after every 4 items for better readability
+                if len(ping_row) == 4:
+                    message_lines.append("  ".join(ping_row))
+                    ping_row = []
             
             # Add any remaining items in the last row
-            if current_row:
-                grid.append(" | ".join(current_row))
+            if ping_row:
+                message_lines.append("  ".join(ping_row))
             
-            # Add the grid to the message
-            message_lines.extend(grid)
             message_lines.append("")
         
-        message_lines.append("🔄 *Updated hourly*")
+        message_lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        message_lines.append("🔄 **Updated hourly**")
         return "\n".join(message_lines)
     
     def _reconstruct_proxy_url(self, proxy: ProxyData):
