@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 from src.telegram_client import TelegramClient
 from config.channels import TELEGRAM_CHANNELS
+from config.settings import CHANNEL_MESSAGE_LIMIT
 
 
 class ChannelScraper:
@@ -52,7 +53,7 @@ class ChannelScraper:
                 return []
             
             messages = await self.telegram_client.fetch_channel_messages(
-                channel_entity, limit=200
+                channel_entity, limit=CHANNEL_MESSAGE_LIMIT
             )
             
             return messages

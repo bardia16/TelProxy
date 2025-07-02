@@ -27,3 +27,20 @@ RATE_LIMIT_DELAY = 1
 SCHEDULER_INTERVAL_HOURS = 1
 
 TOP_N_PROXIES = 50
+
+CHANNEL_MESSAGE_LIMIT = 200
+
+# Proxy settings for web scraping
+USE_PROXY_FOR_SCRAPING = True
+SCRAPING_PROXY_TYPE = 'http'  # 'http', 'socks5', or 'auto' (try both)
+SCRAPING_PROXY_TIMEOUT = 10
+
+# Initial proxy configuration (used before finding others)
+INITIAL_PROXY = {
+    'type': 'mtproto',  # 'mtproto', 'socks5', or 'http'
+    'server': '',  # e.g., '1.2.3.4'
+    'port': '',    # e.g., '443'
+    'secret': '',  # for MTProto only
+    'username': '', # for SOCKS5 only
+    'password': ''  # for SOCKS5 only
+}

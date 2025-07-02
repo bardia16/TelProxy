@@ -142,11 +142,35 @@ class ProxyStorage:
             print(f"Error loading proxies from JSON: {e}")
             return []
     
-    def save_proxies_to_database(self, proxies: List[ProxyData]):
+    def save_proxies_to_database(self, proxies: List[ProxyData], include_initial=True):
+        """Save proxies to database, optionally including the initial proxy"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             
-            for proxy in proxies:
+            # Get initial proxy if configured
+            from config.settings import INITIAL_PROXY
+            initial_proxy = None
+            if include_initial and INITIAL_PROXY and INITIAL_PROXY['server'] and INITIAL_PROXY['port']:
+                initial_proxy = ProxyData(
+                    proxy_type=INITIAL_PROXY['type'],
+                    server=INITIAL_PROXY['server'],
+                    port=INITIAL_PROXY['port'],
+                    secret=INITIAL_PROXY.get('secret'),
+                    username=INITIAL_PROXY.get('username'),
+                    password=INITIAL_PROXY.get('password')
+                )
+            
+            all_proxies = list(proxies)  # Create a copy
+            if initial_proxy:
+                # Add initial proxy if not already in the list
+                if not any(p.server == initial_proxy.server and 
+                         p.port == initial_proxy.port and 
+                         p.proxy_type == initial_proxy.proxy_type 
+                         for p in proxies):
+                    all_proxies.append(initial_proxy)
+                    print("📥 Added initial proxy to storage")
+            
+            for proxy in all_proxies:
                 cursor.execute('''
                     INSERT OR REPLACE INTO proxies 
                     (proxy_type, server, port, secret, username, password, original_url, is_working, last_validated)

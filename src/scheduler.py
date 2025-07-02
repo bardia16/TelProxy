@@ -21,6 +21,8 @@ class ProxyScheduler:
             telegram_client=self.telegram_client,
             output_channel=OUTPUT_CHANNEL
         )
+        # Set proxy storage reference for scraping with proxies
+        self.telegram_client.set_proxy_storage(self.proxy_storage)
         self.is_running = False
     
     async def run_hourly_cycle(self):
