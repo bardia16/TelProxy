@@ -83,9 +83,10 @@ class TelegramClient:
                 return
             
             # Configure bot with SOCKS5 proxy
+            proxy_url = self.SOCKS5_PROXY['https']
             proxy_request = HTTPXRequest(
                 connection_pool_size=8,
-                proxy=self.SOCKS5_PROXY['https'],
+                proxy=proxy_url,
                 read_timeout=SCRAPING_PROXY_TIMEOUT,
                 write_timeout=SCRAPING_PROXY_TIMEOUT,
                 connect_timeout=SCRAPING_PROXY_TIMEOUT
@@ -125,6 +126,12 @@ class TelegramClient:
     
     async def close_session(self):
         self.is_connected = False
+    
+    def set_proxy_storage(self, proxy_storage):
+        """Set the proxy storage instance for accessing working proxies.
+        This method is kept for compatibility with the scheduler but doesn't affect
+        the proxy configuration since we're using a local SOCKS5 proxy."""
+        pass  # We're using local SOCKS5 proxy instead of proxy storage
     
     async def get_channel_messages(self, channel_url, limit=CHANNEL_MESSAGE_LIMIT):
         """Get messages from a Telegram channel using web scraping"""
