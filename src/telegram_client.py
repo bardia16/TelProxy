@@ -167,6 +167,27 @@ class TelegramClient:
             print(f"❌ Error editing message {message_id} in {channel}: {e}")
             return False
     
+    async def get_pinned_messages(self, channel):
+        """
+        Get pinned messages from a Telegram channel using the bot
+        """
+        if not self.bot or not self.is_connected:
+            await self.start_session()
+        
+        if not self.bot:
+            print("❌ Bot token not configured. Cannot get pinned messages.")
+            return []
+        
+        try:
+            chat = await self.bot.get_chat(chat_id=channel)
+            if chat.pinned_message:
+                return [chat.pinned_message.message_id]
+            else:
+                return []
+        except Exception as e:
+            print(f"❌ Error getting pinned messages from {channel}: {e}")
+            return []
+    
     async def pin_message(self, channel, message_id):
         """
         Pin a message in a Telegram channel using the bot

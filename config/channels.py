@@ -13,5 +13,6 @@ TELEGRAM_CHANNELS = [
     'https://t.me/Not_Proxyy',
     'https://t.me/proxyyj',
     'https://t.me/mtp_proxyyyy',
+    'https://t.me/ProxyMTProto',
     
 ] 

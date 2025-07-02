@@ -1,7 +1,7 @@
 import json
 import sqlite3
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Optional
 from pathlib import Path
 from telegram import Bot
@@ -344,25 +344,31 @@ class ProxyStorage:
                     
                 return message_ids[0] if message_ids else None
             else:
-                # Try to edit existing message first, fallback to new message
+                # Try to edit pinned message first, fallback to new message
                 message = self._format_proxy_message(proxies, validator=validator, start_number=1)
                 
-                if self.last_posted_message_id:
-                    # Try to edit the existing message
+                # Get pinned messages from the channel
+                pinned_message_ids = await self.telegram_client.get_pinned_messages(self.output_channel)
+                
+                if pinned_message_ids:
+                    # Try to edit the last pinned message
+                    last_pinned_id = pinned_message_ids[-1]  # Get the most recent pinned message
                     edit_success = await self.telegram_client.edit_message(
-                        self.output_channel, self.last_posted_message_id, message
+                        self.output_channel, last_pinned_id, message
                     )
                     
                     if edit_success:
-                        # Successfully edited existing message
-                        self._record_posting_history(self.last_posted_message_id, len(proxies))
-                        self._save_last_message_id(self.last_posted_message_id)
-                        print(f"✅ Updated existing message with {len(proxies)} proxies")
-                        return self.last_posted_message_id
+                        # Successfully edited pinned message
+                        self._record_posting_history(last_pinned_id, len(proxies))
+                        self._save_last_message_id(last_pinned_id)
+                        print(f"✅ Updated pinned message with {len(proxies)} proxies")
+                        return last_pinned_id
                     else:
-                        print("⚠️ Failed to edit existing message, sending new message instead")
+                        print("⚠️ Failed to edit pinned message, sending new message instead")
+                else:
+                    print("ℹ️ No pinned message found, will create new message")
                 
-                # Send new message (either no previous message or edit failed)
+                # Send new message (either no pinned message or edit failed)
                 message_id = await self.telegram_client.send_message(
                     self.output_channel, message
                 )
@@ -370,7 +376,7 @@ class ProxyStorage:
                 if message_id:
                     await self._pin_latest_message(message_id)
                     self._record_posting_history(message_id, len(proxies))
-                    print(f"✅ Posted {len(proxies)} proxies to Telegram channel")
+                    print(f"✅ Posted {len(proxies)} proxies to Telegram channel and pinned it")
                 
                 return message_id
             
@@ -379,10 +385,15 @@ class ProxyStorage:
             return None
     
     def _format_proxy_message(self, proxies: List[ProxyData], single_type=False, part_info=None, validator=None, start_number=1):
-        now = datetime.now(timezone.utc)
-        timestamp = now.strftime('%Y-%m-%d %H:%M UTC')
+        # Convert UTC to Iran Standard Time (UTC +3:30)
+        utc_now = datetime.now(timezone.utc)
+        iran_offset = timezone(timedelta(hours=3, minutes=30))
+        iran_time = utc_now.astimezone(iran_offset)
+        timestamp = iran_time.strftime('%Y-%m-%d %H:%M')
         
         message_lines = [
+            f"🔄 **Last Update:** {timestamp} (UTC+3:30)",
+            "",
             f"🔑 **Fresh Proxies** • **{len(proxies)} total** • ⚡ **By ping**"
         ]
         
@@ -460,18 +471,8 @@ class ProxyStorage:
         try:
             if not self.telegram_client:
                 return
-                
-            # Unpin previous message if exists
-            if self.last_posted_message_id:
-                try:
-                    await self.telegram_client.pin_message(
-                        self.output_channel, 
-                        message_id=0  # 0 means unpin
-                    )
-                except Exception:
-                    pass  # Ignore errors when unpinning
             
-            # Pin the new message
+            # Pin the new message (Telegram automatically unpins previous messages when pinning new ones)
             success = await self.telegram_client.pin_message(
                 self.output_channel,
                 message_id
