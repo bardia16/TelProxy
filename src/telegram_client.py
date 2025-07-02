@@ -73,16 +73,21 @@ class TelegramClient:
                     'https': proxy_url
                 }
             elif proxy.proxy_type == 'mtproto':
-                # For MTProto proxies, we'll use a SOCKS5 proxy configuration
-                # This allows us to use the proxy for web scraping
-                proxy_url = f"socks5://{proxy.server}:{proxy.port}"
+                # For MTProto proxies, we'll try using HTTP proxy configuration
+                # Some MTProto proxies can work this way for web scraping
+                proxy_url = f"http://{proxy.server}:{proxy.port}"
                 if proxy.secret:
-                    # Add the secret as the password
-                    proxy_url = f"socks5://mtproto:{proxy.secret}@{proxy.server}:{proxy.port}"
+                    # Add the secret as a query parameter
+                    proxy_url = f"http://{proxy.server}:{proxy.port}?secret={proxy.secret}"
                 self.session.proxies = {
                     'http': proxy_url,
                     'https': proxy_url
                 }
+                # Set custom headers that might help with MTProto
+                self.session.headers.update({
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1',
+                })
             
             # Set timeout for proxy requests
             self.session.timeout = config.settings.SCRAPING_PROXY_TIMEOUT
