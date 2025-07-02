@@ -12,6 +12,13 @@ from config.settings import (
     CHANNEL_MESSAGE_LIMIT, INITIAL_PROXY
 )
 
+# Set up debug logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 
 class TelegramClient:
     def __init__(self):
@@ -25,25 +32,42 @@ class TelegramClient:
         if INITIAL_PROXY and INITIAL_PROXY['type'] == 'mtproto':
             # Handle base64 secret decoding
             secret_base64 = INITIAL_PROXY['secret']
-            if secret_base64.startswith('7'):  # Remove '7' prefix if present
+            logger.debug(f"Original secret: {secret_base64}")
+            
+            # Remove '7' prefix if present
+            if secret_base64.startswith('7'):
                 secret_base64 = secret_base64[1:]
+                logger.debug(f"Secret after removing '7' prefix: {secret_base64}")
             
             # Add padding if needed
             missing_padding = len(secret_base64) % 4
             if missing_padding:
                 secret_base64 += '=' * (4 - missing_padding)
+                logger.debug(f"Secret after padding: {secret_base64}")
             
-            # Decode base64 to bytes, then convert to hex string for Telethon
-            secret_bytes = base64.b64decode(secret_base64)
-            secret_hex = secret_bytes.hex()  # Convert to hex string for Telethon
-            print(f"🔗 Configuring Telethon with MTProto proxy: {INITIAL_PROXY['server']}:{INITIAL_PROXY['port']}")
-            
-            proxy = (
-                INITIAL_PROXY['server'],
-                int(INITIAL_PROXY['port']),
-                secret_hex  # Pass as hex string since Telethon will call fromhex() internally
-            )
-            connection_type = connection.ConnectionTcpMTProxyRandomizedIntermediate
+            try:
+                # Decode base64 to bytes, then convert to hex string for Telethon
+                secret_bytes = base64.b64decode(secret_base64)
+                logger.debug(f"Secret as bytes (len={len(secret_bytes)}): {secret_bytes}")
+                
+                secret_hex = secret_bytes.hex()
+                logger.debug(f"Secret as hex string (len={len(secret_hex)}): {secret_hex}")
+                
+                print(f"🔗 Configuring Telethon with MTProto proxy: {INITIAL_PROXY['server']}:{INITIAL_PROXY['port']}")
+                
+                proxy = (
+                    INITIAL_PROXY['server'],
+                    int(INITIAL_PROXY['port']),
+                    secret_hex  # Pass as hex string since Telethon will call fromhex() internally
+                )
+                # Try non-randomized intermediate connection
+                connection_type = connection.ConnectionTcpMTProxyIntermediate
+                logger.debug(f"Using connection type: {connection_type.__name__}")
+                
+            except Exception as e:
+                logger.error(f"Error processing proxy secret: {e}", exc_info=True)
+                raise
+                
         else:
             proxy = None
             connection_type = None
