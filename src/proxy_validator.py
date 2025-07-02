@@ -82,8 +82,6 @@ class ProxyValidator:
         ping_times = []
         
         try:
-            print(f"  📊 Measuring ping for {proxy_key} ({self.ping_measurements} measurements)...")
-            
             # Test ping multiple times and take the average
             for measurement in range(self.ping_measurements):
                 start_time = time.time()
@@ -100,10 +98,8 @@ class ProxyValidator:
                 if success:
                     ping_time = time.time() - start_time
                     ping_times.append(ping_time)
-                    print(f"    Measurement {measurement + 1}/{self.ping_measurements}: {ping_time*1000:.0f}ms")
                 else:
                     ping_times.append(float('inf'))
-                    print(f"    Measurement {measurement + 1}/{self.ping_measurements}: Failed")
                 
                 # Add delay between measurements (except for the last one)
                 if measurement < self.ping_measurements - 1:
@@ -112,17 +108,11 @@ class ProxyValidator:
             if ping_times and any(p != float('inf') for p in ping_times):
                 valid_pings = [p for p in ping_times if p != float('inf')]
                 avg_ping = sum(valid_pings) / len(valid_pings)
-                min_ping = min(valid_pings)
-                max_ping = max(valid_pings)
-                
-                print(f"    📈 Results: Avg={avg_ping*1000:.0f}ms, Min={min_ping*1000:.0f}ms, Max={max_ping*1000:.0f}ms ({len(valid_pings)}/{self.ping_measurements} successful)")
                 return avg_ping
             else:
-                print(f"    ❌ All ping measurements failed")
                 return float('inf')
                 
         except Exception as e:
-            print(f"    ❌ Ping measurement error: {type(e).__name__}: {e}")
             return float('inf')
     
     async def test_mtproto_ping(self, proxy: ProxyData):
