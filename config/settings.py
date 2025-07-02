@@ -37,10 +37,10 @@ SCRAPING_PROXY_TIMEOUT = 10
 
 # Initial proxy configuration (used before finding others)
 INITIAL_PROXY = {
-    'type': 'mtproto',  # 'mtproto', 'socks5', or 'http'
-    'server': '91.99.198.18',  # e.g., '1.2.3.4'
-    'port': '8888',    # e.g., '443'
-    'secret': '7gAA8A8Pd1VV____9QBuLmltZWRpYS5zdGVhbXBvd2VyZWQuY29t',  # for MTProto only
-    'username': '', # for SOCKS5 only
-    'password': ''  # for SOCKS5 only
+    'type': 'mtproto',  # Must be 'mtproto' for Telethon
+    'server': '91.99.206.83',
+    'port': '70',
+    'secret': '7gAA8A8Pd1VV____9QBuLmktLXcuZ28tLS0=',  # Secret without any prefix
+    'username': '',  # for SOCKS5 only
+    'password': ''   # for SOCKS5 only
 }
