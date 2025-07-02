@@ -4,7 +4,7 @@ import aiohttp
 import time
 from typing import List, Dict, Tuple, Optional
 from src.proxy_extractor import ProxyData
-from config.settings import PROXY_VALIDATION_TIMEOUT
+from config.settings import PROXY_VALIDATION_TIMEOUT, PING_MEASUREMENTS, PING_DELAY
 
 
 class ProxyValidator:
@@ -13,6 +13,8 @@ class ProxyValidator:
         self.timeout = PROXY_VALIDATION_TIMEOUT
         self.validation_results = {}
         self.ping_results = {}
+        self.ping_measurements = PING_MEASUREMENTS
+        self.ping_delay = PING_DELAY
         self.test_url = "http://httpbin.org/ip"
         self.telegram_test_domains = ["149.154.175.53", "149.154.167.51"]
     
@@ -43,11 +45,14 @@ class ProxyValidator:
         working_proxies.sort(key=lambda proxy: self.get_proxy_ping(proxy))
         
         print(f"Validation complete: {len(working_proxies)}/{len(proxies)} proxies are working")
-        print("Top 5 proxies by ping:")
-        for i, proxy in enumerate(working_proxies[:5]):
+        print("🏆 Top 10 proxies by ping:")
+        for i, proxy in enumerate(working_proxies[:10]):
             ping = self.get_proxy_ping(proxy)
-            ping_str = f"{ping:.3f}s" if ping != float('inf') else "N/A"
-            print(f"  {i+1}. {proxy.server}:{proxy.port} - {ping_str}")
+            if ping != float('inf'):
+                ping_str = f"{ping*1000:.0f}ms"
+            else:
+                ping_str = "N/A"
+            print(f"  {i+1:2d}. {proxy.server:<20} {proxy.port:<6} - {ping_str} ({proxy.proxy_type})")
         
         return working_proxies
     
@@ -77,8 +82,10 @@ class ProxyValidator:
         ping_times = []
         
         try:
-            # Test ping 3 times and take the average
-            for _ in range(3):
+            print(f"  📊 Measuring ping for {proxy_key} ({self.ping_measurements} measurements)...")
+            
+            # Test ping multiple times and take the average
+            for measurement in range(self.ping_measurements):
                 start_time = time.time()
                 
                 if proxy.proxy_type == 'mtproto':
@@ -93,19 +100,29 @@ class ProxyValidator:
                 if success:
                     ping_time = time.time() - start_time
                     ping_times.append(ping_time)
+                    print(f"    Measurement {measurement + 1}/{self.ping_measurements}: {ping_time*1000:.0f}ms")
                 else:
                     ping_times.append(float('inf'))
+                    print(f"    Measurement {measurement + 1}/{self.ping_measurements}: Failed")
                 
-                await asyncio.sleep(0.1)  # Small delay between ping tests
+                # Add delay between measurements (except for the last one)
+                if measurement < self.ping_measurements - 1:
+                    await asyncio.sleep(self.ping_delay)
             
             if ping_times and any(p != float('inf') for p in ping_times):
                 valid_pings = [p for p in ping_times if p != float('inf')]
                 avg_ping = sum(valid_pings) / len(valid_pings)
+                min_ping = min(valid_pings)
+                max_ping = max(valid_pings)
+                
+                print(f"    📈 Results: Avg={avg_ping*1000:.0f}ms, Min={min_ping*1000:.0f}ms, Max={max_ping*1000:.0f}ms ({len(valid_pings)}/{self.ping_measurements} successful)")
                 return avg_ping
             else:
+                print(f"    ❌ All ping measurements failed")
                 return float('inf')
                 
         except Exception as e:
+            print(f"    ❌ Ping measurement error: {type(e).__name__}: {e}")
             return float('inf')
     
     async def test_mtproto_ping(self, proxy: ProxyData):
@@ -297,6 +314,11 @@ class ProxyValidator:
     def get_sorted_proxies_by_ping(self, proxies: List[ProxyData]):
         working_proxies = self.filter_working_proxies(proxies)
         return sorted(working_proxies, key=lambda proxy: self.get_proxy_ping(proxy))
+    
+    def configure_ping_settings(self, measurements: int = 5, delay: float = 0.2):
+        self.ping_measurements = max(1, measurements)  # At least 1 measurement
+        self.ping_delay = max(0.1, delay)  # At least 0.1 second delay
+        print(f"📊 Ping settings updated: {self.ping_measurements} measurements with {self.ping_delay}s delay")
 
     def get_validation_summary(self):
         total = len(self.validation_results)
