@@ -315,16 +315,12 @@ class ProxyStorage:
         timestamp = now.strftime('%Y-%m-%d %H:%M UTC')
         
         message_lines = [
-            "🔑 **Fresh Telegram Proxies**",
-            f"📅 {timestamp} • 📊 **Total: {len(proxies)}**"
+            f"🔑 **Fresh Proxies** • **{len(proxies)} total** • ⚡ **By ping**"
         ]
         
         if part_info:
             message_lines.append(f"📑 **{part_info}**")
-            
-        message_lines.append("⚡ **Sorted by ping (fastest first)**")
-        message_lines.append("")
-        message_lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        
         message_lines.append("")
         
         # Group proxies by type
@@ -339,18 +335,11 @@ class ProxyStorage:
             for proxy_type in by_type:
                 by_type[proxy_type].sort(key=lambda p: validator.get_proxy_ping(p))
         
-        # Process each proxy type with card-style formatting
+        # Process each proxy type with minimalist grid formatting
         for proxy_type, proxy_list in by_type.items():
-            # Add emoji based on proxy type
-            type_emoji = {
-                'mtproto': '🚀',
-                'socks5': '🔌', 
-                'http': '🌐'
-            }.get(proxy_type.lower(), '📡')
+            message_lines.append(f"**{proxy_type.upper()}**")
             
-            message_lines.append(f"{type_emoji} **{proxy_type.upper()}** ({len(proxy_list)} proxies)")
-            
-            # Create ping display grid
+            # Create ping display grid with consistent spacing
             ping_row = []
             for proxy in proxy_list:
                 if validator:
@@ -359,29 +348,28 @@ class ProxyStorage:
                         ping_ms = int(ping * 1000)
                         # Create clickable ping with proxy URL
                         url = self._reconstruct_proxy_url(proxy)
-                        ping_display = f"[⚡ {ping_ms}ms]({url})"
+                        ping_display = f"[{ping_ms}ms]({url})"
                     else:
                         url = self._reconstruct_proxy_url(proxy)
-                        ping_display = f"[⚡ N/A]({url})"
+                        ping_display = f"[N/A]({url})"
                 else:
                     url = self._reconstruct_proxy_url(proxy)
-                    ping_display = f"[⚡ --]({url})"
+                    ping_display = f"[--]({url})"
                 
                 ping_row.append(ping_display)
                 
-                # Add row break after every 4 items for better readability
-                if len(ping_row) == 4:
-                    message_lines.append("  ".join(ping_row))
+                # Add row break after every 6 items for better grid layout
+                if len(ping_row) == 6:
+                    message_lines.append(" • ".join(ping_row))
                     ping_row = []
             
             # Add any remaining items in the last row
             if ping_row:
-                message_lines.append("  ".join(ping_row))
+                message_lines.append(" • ".join(ping_row))
             
             message_lines.append("")
         
-        message_lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        message_lines.append("🔄 **Updated hourly**")
+        message_lines.append("🔄 **Hourly updates**")
         return "\n".join(message_lines)
     
     def _reconstruct_proxy_url(self, proxy: ProxyData):
