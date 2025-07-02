@@ -144,6 +144,29 @@ class TelegramClient:
             print(f"❌ Error sending message to {channel}: {e}")
             return None
     
+    async def edit_message(self, channel, message_id, new_text):
+        """
+        Edit an existing message in a Telegram channel using the bot
+        """
+        if not self.bot or not self.is_connected:
+            await self.start_session()
+        
+        if not self.bot:
+            print("❌ Bot token not configured. Cannot edit messages.")
+            return False
+        
+        try:
+            await self.bot.edit_message_text(
+                chat_id=channel,
+                message_id=message_id,
+                text=new_text,
+                parse_mode='Markdown'
+            )
+            return True
+        except Exception as e:
+            print(f"❌ Error editing message {message_id} in {channel}: {e}")
+            return False
+    
     async def pin_message(self, channel, message_id):
         """
         Pin a message in a Telegram channel using the bot

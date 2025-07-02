@@ -19,6 +19,7 @@ class ProxyStorage:
         self.last_posted_message_id = None
         self._ensure_storage_directories()
         self._initialize_database()
+        self._load_last_message_id()
     
     def _ensure_storage_directories(self):
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
@@ -53,6 +54,44 @@ class ProxyStorage:
                     channel_id TEXT
                 )
             ''')
+            
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS channel_settings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    channel_id TEXT UNIQUE,
+                    last_message_id INTEGER,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            conn.commit()
+    
+    def _load_last_message_id(self):
+        """Load the last posted message ID from database"""
+        if not self.output_channel:
+            return
+        
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                'SELECT last_message_id FROM channel_settings WHERE channel_id = ?',
+                (str(self.output_channel),)
+            )
+            result = cursor.fetchone()
+            if result:
+                self.last_posted_message_id = result[0]
+                print(f"📋 Loaded last message ID: {self.last_posted_message_id}")
+    
+    def _save_last_message_id(self, message_id: int):
+        """Save the last posted message ID to database"""
+        if not self.output_channel:
+            return
+        
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR REPLACE INTO channel_settings (channel_id, last_message_id, updated_at)
+                VALUES (?, ?, ?)
+            ''', (str(self.output_channel), message_id, datetime.now(timezone.utc)))
             conn.commit()
     
     def save_proxies_to_json(self, proxies: List[ProxyData]):
@@ -255,6 +294,7 @@ class ProxyStorage:
             # Check if we need to split messages
             if len(proxies) > max_proxies_per_message:
                 print(f"Large number of proxies ({len(proxies)}), splitting into multiple messages")
+                print("ℹ️ Multiple messages mode: will send new messages instead of editing")
                 
                 # Send one message per proxy type
                 message_ids = []
@@ -304,8 +344,25 @@ class ProxyStorage:
                     
                 return message_ids[0] if message_ids else None
             else:
-                # Send all proxies in one message
+                # Try to edit existing message first, fallback to new message
                 message = self._format_proxy_message(proxies, validator=validator, start_number=1)
+                
+                if self.last_posted_message_id:
+                    # Try to edit the existing message
+                    edit_success = await self.telegram_client.edit_message(
+                        self.output_channel, self.last_posted_message_id, message
+                    )
+                    
+                    if edit_success:
+                        # Successfully edited existing message
+                        self._record_posting_history(self.last_posted_message_id, len(proxies))
+                        self._save_last_message_id(self.last_posted_message_id)
+                        print(f"✅ Updated existing message with {len(proxies)} proxies")
+                        return self.last_posted_message_id
+                    else:
+                        print("⚠️ Failed to edit existing message, sending new message instead")
+                
+                # Send new message (either no previous message or edit failed)
                 message_id = await self.telegram_client.send_message(
                     self.output_channel, message
                 )
@@ -422,6 +479,7 @@ class ProxyStorage:
             
             if success:
                 self.last_posted_message_id = message_id
+                self._save_last_message_id(message_id)
                 print("📌 Message pinned successfully")
             
         except Exception as e:
