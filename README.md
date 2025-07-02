@@ -66,6 +66,19 @@ You can authenticate with Telegram in one of two ways:
    TELEGRAM_BOT_TOKEN=your_bot_token
    ```
 
+## Configuration
+
+You can customize the behavior by modifying `config/settings.py`:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `TOP_N_PROXIES` | 50 | Maximum number of best-performing proxies to post to Telegram (sorted by ping time) |
+| `PROXY_VALIDATION_TIMEOUT` | 10 | Timeout in seconds for proxy connectivity tests |
+| `PING_MEASUREMENTS` | 5 | Number of ping tests to average for each proxy |
+| `PING_DELAY` | 0.2 | Delay in seconds between ping measurements |
+| `RATE_LIMIT_DELAY` | 1 | Delay in seconds between API requests |
+| `SCHEDULER_INTERVAL_HOURS` | 1 | Interval in hours for automated runs |
+
 ## Usage
 
 ### Single Run (Extract & Validate Once)
@@ -82,7 +95,7 @@ python -m src.main schedule
 
 **Local Storage Only**: Configure only API credentials or bot token - proxies saved to JSON and SQLite database
 
-**Combined Method (Recommended)**: Configure API credentials/bot token + output channel - proxies posted to Telegram with automatic pinning and historical tracking
+**Combined Method (Recommended)**: Configure API credentials/bot token + output channel - proxies posted to Telegram with automatic pinning and historical tracking. Only the top N best-performing proxies (lowest ping times) are posted.
 
 ## Project Structure
 

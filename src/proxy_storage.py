@@ -6,7 +6,7 @@ from typing import List, Dict, Optional
 from pathlib import Path
 from telegram import Bot
 from src.proxy_extractor import ProxyData
-from config.settings import STORAGE_FILE_PATH, API_ID, API_HASH, SESSION_NAME, BOT_TOKEN
+from config.settings import STORAGE_FILE_PATH, API_ID, API_HASH, SESSION_NAME, BOT_TOKEN, TOP_N_PROXIES
 
 
 class ProxyStorage:
@@ -231,6 +231,17 @@ class ProxyStorage:
             return None
         
         try:
+            # Select top N proxies based on ping performance
+            if validator and len(proxies) > TOP_N_PROXIES:
+                # Sort all proxies by ping time (lowest ping = best performance)
+                proxies_with_ping = [(proxy, validator.get_proxy_ping(proxy)) for proxy in proxies]
+                proxies_with_ping.sort(key=lambda x: x[1])  # Sort by ping (ascending)
+                
+                # Select only the top N best performing proxies
+                selected_proxies = [proxy for proxy, ping in proxies_with_ping[:TOP_N_PROXIES]]
+                proxies = selected_proxies
+                print(f"📊 Selected top {len(proxies)} proxies based on ping performance")
+            
             # Maximum proxies per message (Telegram has a 4096 character limit)
             max_proxies_per_message = 50
             

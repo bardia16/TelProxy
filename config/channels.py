@@ -10,4 +10,8 @@ TELEGRAM_CHANNELS = [
     'https://t.me/MtProxy_blue',
     'https://t.me/ROCKETTUNNEL',
     'https://t.me/VPN_SOLVE',
+    'https://t.me/Not_Proxyy',
+    'https://t.me/proxyyj',
+    'https://t.me/mtp_proxyyyy',
+    
 ] 
