@@ -157,4 +157,32 @@ class ProxyExtractor:
             return False
         
         # Allow most characters that could be in a domain or complex server name
-        return True 
+        return True
+    
+    @staticmethod
+    def remove_duplicates(proxies: List[ProxyData]) -> List[ProxyData]:
+        """Remove duplicate proxies based on server, port, and proxy type combination"""
+        if not proxies:
+            return []
+        
+        unique_proxies = []
+        seen_combinations = set()
+        
+        for proxy in proxies:
+            # Create unique identifier including proxy type for more precise deduplication
+            proxy_key = f"{proxy.proxy_type}:{proxy.server}:{proxy.port}"
+            
+            # For MTProto proxies, also include secret in the key since different secrets
+            # on the same server:port represent different proxy configurations
+            if proxy.proxy_type == 'mtproto' and proxy.secret:
+                proxy_key += f":{proxy.secret}"
+            
+            # For SOCKS5 proxies, include username if available
+            elif proxy.proxy_type == 'socks5' and proxy.username:
+                proxy_key += f":{proxy.username}"
+            
+            if proxy_key not in seen_combinations:
+                seen_combinations.add(proxy_key)
+                unique_proxies.append(proxy)
+        
+        return unique_proxies 

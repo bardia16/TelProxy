@@ -14,7 +14,7 @@ OUTPUT_CHANNEL = os.getenv('TELEGRAM_OUTPUT_CHANNEL')
 
 SESSION_NAME = 'telegram_scraper'
 
-PROXY_VALIDATION_TIMEOUT = 10
+PROXY_VALIDATION_TIMEOUT = 5
 
 # Ping measurement settings
 PING_MEASUREMENTS = 5  # Number of ping tests to average

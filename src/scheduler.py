@@ -55,6 +55,19 @@ class ProxyScheduler:
             
             print(f"✅ Extracted {len(all_proxies)} total proxies")
             
+            # Remove duplicates across all extracted proxies
+            print("🔄 Removing duplicate proxies...")
+            unique_proxies = self.proxy_extractor.remove_duplicates(all_proxies)
+            duplicates_removed = len(all_proxies) - len(unique_proxies)
+            
+            if duplicates_removed > 0:
+                print(f"🗑️ Removed {duplicates_removed} duplicate proxies")
+                all_proxies = unique_proxies
+            else:
+                print("✅ No duplicates found")
+            
+            print(f"📊 Final count: {len(all_proxies)} unique proxies")
+            
             # Print detailed information about each found proxy
             print("\n📋 Found Proxies (Before Validation):")
             print("-" * 60)
@@ -125,7 +138,7 @@ class ProxyScheduler:
             
             print(f"\n📊 Cycle Summary:")
             print(f"   • Messages processed: {len(messages)}")
-            print(f"   • Proxies extracted: {len(all_proxies)}")
+            print(f"   • Proxies extracted: {len(all_proxies)} (after deduplication)")
             print(f"   • Working proxies: {len(working_proxies)}")
             print(f"   • Success rate: {stats['success_rate']:.1f}%")
             print(f"   • Posted to Telegram: {'Yes' if OUTPUT_CHANNEL and message_id else 'No'}")
