@@ -8,22 +8,27 @@ from typing import List, Dict, Any, Optional
 from telegram import Bot
 from telegram.request import HTTPXRequest
 import httpx
+import socket
 from config.settings import (
     BOT_TOKEN, CHANNEL_MESSAGE_LIMIT, USE_PROXY_FOR_SCRAPING,
-    SCRAPING_PROXY_TIMEOUT, INITIAL_PROXY
+    SCRAPING_PROXY_TIMEOUT
 )
 import config.settings
 from src.proxy_extractor import ProxyData
 
 
 class TelegramClient:
+    # Local SOCKS5 proxy configuration (created by SSH tunnel)
+    SOCKS5_PROXY = {
+        'http': 'socks5h://127.0.0.1:1080',
+        'https': 'socks5h://127.0.0.1:1080'
+    }
     
     def __init__(self):
         self.session = requests.Session()
         self.is_connected = False
         self.use_bot_token = bool(BOT_TOKEN)
-        self.current_proxy = None
-        self.proxy_storage = None  # Will be set by scheduler if needed
+        self.bot = None
         
         # Configure headers to mimic a browser
         self.session.headers.update({
@@ -32,152 +37,94 @@ class TelegramClient:
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         })
         
-        # Initialize session with proxy if configured
+        # Initialize session and bot with proxy
         self._init_session()
+        if self.use_bot_token:
+            self._init_bot()
+    
+    def _check_proxy_connection(self):
+        """Check if the SOCKS5 proxy is available"""
+        try:
+            # Try to connect to the SOCKS proxy
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            sock.connect(('127.0.0.1', 1080))
+            sock.close()
+            return True
+        except (socket.timeout, socket.error):
+            print("⚠️ Local SOCKS5 proxy not available. Make sure SSH tunnel is active:")
+            print("   ssh -N -D 1080 user@server")
+            return False
     
     def _init_session(self):
-        """Initialize session with proxy configuration"""
+        """Initialize requests session with SOCKS5 proxy"""
         try:
-            proxy = self._get_initial_proxy()
-            if not proxy:
-                proxy = self._get_working_proxy_for_scraping()
+            if not self._check_proxy_connection():
+                return
             
-            if proxy:
-                self._configure_session_proxy(proxy)
+            # Configure session to use SOCKS5 proxy
+            self.session.proxies = self.SOCKS5_PROXY
+            self.session.timeout = SCRAPING_PROXY_TIMEOUT
+            
+            # Test the connection
+            response = self.session.get('https://t.me/', timeout=SCRAPING_PROXY_TIMEOUT)
+            response.raise_for_status()
+            print("✅ Successfully connected to Telegram web through SOCKS5 proxy")
             
         except Exception as e:
-            print(f"⚠️ Error initializing session: {e}")
-            self._configure_session_proxy(None)
+            print(f"❌ Error configuring session with SOCKS5 proxy: {e}")
+            # Clear proxy configuration
+            self.session.proxies.clear()
     
-    def _configure_session_proxy(self, proxy=None):
-        """Configure the requests session to use a proxy"""
-        if not proxy:
-            # Clear any existing proxy configuration
-            self.session.proxies.clear()
-            self.current_proxy = None
-            return
-        
+    def _init_bot(self):
+        """Initialize Telegram bot with SOCKS5 proxy"""
         try:
-            if proxy.proxy_type == 'http':
-                proxy_url = f"http://{proxy.server}:{proxy.port}"
-                self.session.proxies = {
-                    'http': proxy_url,
-                    'https': proxy_url
-                }
-            elif proxy.proxy_type == 'socks5':
-                proxy_url = f"socks5://{proxy.server}:{proxy.port}"
-                if proxy.username and proxy.password:
-                    proxy_url = f"socks5://{proxy.username}:{proxy.password}@{proxy.server}:{proxy.port}"
-                self.session.proxies = {
-                    'http': proxy_url,
-                    'https': proxy_url
-                }
-            elif proxy.proxy_type == 'mtproto':
-                # For MTProto proxies, we'll try using HTTP proxy configuration
-                # Some MTProto proxies can work this way for web scraping
-                proxy_url = f"http://{proxy.server}:{proxy.port}"
-                if proxy.secret:
-                    # Add the secret as a query parameter
-                    proxy_url = f"http://{proxy.server}:{proxy.port}?secret={proxy.secret}"
-                self.session.proxies = {
-                    'http': proxy_url,
-                    'https': proxy_url
-                }
-                # Set custom headers that might help with MTProto
-                self.session.headers.update({
-                    'Connection': 'keep-alive',
-                    'Upgrade-Insecure-Requests': '1',
-                })
+            if not self._check_proxy_connection():
+                return
             
-            # Set timeout for proxy requests
-            self.session.timeout = config.settings.SCRAPING_PROXY_TIMEOUT
-            self.current_proxy = proxy
-            print(f"🔗 Configured session with {proxy.proxy_type} proxy: {proxy.server}:{proxy.port}")
+            # Configure bot with SOCKS5 proxy
+            proxy_request = HTTPXRequest(
+                connection_pool_size=8,
+                proxy=self.SOCKS5_PROXY['https'],
+                read_timeout=SCRAPING_PROXY_TIMEOUT,
+                write_timeout=SCRAPING_PROXY_TIMEOUT,
+                connect_timeout=SCRAPING_PROXY_TIMEOUT
+            )
+            
+            self.bot = Bot(token=BOT_TOKEN, request=proxy_request)
+            print("✅ Successfully configured bot with SOCKS5 proxy")
             
         except Exception as e:
-            print(f"❌ Error configuring proxy: {e}")
-            self.session.proxies.clear()
-            self.current_proxy = None
+            print(f"❌ Error configuring bot with SOCKS5 proxy: {e}")
+            # Initialize bot without proxy as fallback
+            self.bot = Bot(token=BOT_TOKEN)
+            print("ℹ️ Fallback: Initialized bot without proxy")
     
     async def start_session(self):
         if self.is_connected:
             return
         
         try:
-            # Test the connection by making a request to Telegram
-            response = self.session.get('https://t.me/', timeout=config.settings.SCRAPING_PROXY_TIMEOUT)
-            response.raise_for_status()
-            self.is_connected = True
-            print("✅ Connected to Telegram web")
+            if self.use_bot_token and self.bot:
+                # Test the bot connection
+                bot_info = await self.bot.get_me()
+                self.is_connected = True
+                print(f"✅ Connected to Telegram as bot: {bot_info.username}")
+            else:
+                # For web scraping only, we don't need bot authentication
+                self.is_connected = True
+                print("✅ Ready for web scraping")
             
         except Exception as e:
             print(f"❌ Error connecting to Telegram: {e}")
             self.is_connected = False
-            # Try reinitializing the session with a different proxy
+            # Try reinitializing the session
             self._init_session()
+            if self.use_bot_token:
+                self._init_bot()
     
     async def close_session(self):
         self.is_connected = False
-    
-    def set_proxy_storage(self, proxy_storage):
-        """Set the proxy storage instance for accessing working proxies"""
-        self.proxy_storage = proxy_storage
-        # Re-initialize session with potential new proxies
-        self._init_session()
-    
-    def _get_initial_proxy(self):
-        """Get the initial proxy from settings if configured"""
-        if not INITIAL_PROXY or not INITIAL_PROXY['server'] or not INITIAL_PROXY['port']:
-            return None
-        
-        try:
-            proxy = ProxyData(
-                proxy_type=INITIAL_PROXY['type'],
-                server=INITIAL_PROXY['server'],
-                port=INITIAL_PROXY['port'],
-                secret=INITIAL_PROXY.get('secret'),
-                username=INITIAL_PROXY.get('username'),
-                password=INITIAL_PROXY.get('password')
-            )
-            print(f"🔗 Using initial {proxy.proxy_type} proxy: {proxy.server}:{proxy.port}")
-            return proxy
-        except Exception as e:
-            print(f"❌ Error configuring initial proxy: {e}")
-            return None
-    
-    def _get_working_proxy_for_scraping(self):
-        """Get a working proxy for web scraping from the database or initial config"""
-        if not USE_PROXY_FOR_SCRAPING:
-            return None
-        
-        try:
-            # First try to get the initial proxy since it's configured manually
-            initial_proxy = self._get_initial_proxy()
-            if initial_proxy:
-                return initial_proxy
-            
-            # Then try to get a proxy from storage if available
-            if self.proxy_storage:
-                if config.settings.SCRAPING_PROXY_TYPE == 'auto':
-                    # Try HTTP first, then SOCKS5
-                    http_proxies = self.proxy_storage.get_proxies_by_type('http')
-                    socks5_proxies = self.proxy_storage.get_proxies_by_type('socks5')
-                    all_proxies = http_proxies + socks5_proxies
-                else:
-                    all_proxies = self.proxy_storage.get_proxies_by_type(config.settings.SCRAPING_PROXY_TYPE)
-                
-                if all_proxies:
-                    # Return the first working proxy from storage
-                    proxy = all_proxies[0]
-                    print(f"🔗 Using stored {proxy.proxy_type} proxy: {proxy.server}:{proxy.port}")
-                    return proxy
-            
-            print("⚠️ No working proxies found for scraping")
-            return None
-                
-        except Exception as e:
-            print(f"❌ Error getting proxy for scraping: {e}")
-            return None
     
     async def get_channel_messages(self, channel_url, limit=CHANNEL_MESSAGE_LIMIT):
         """Get messages from a Telegram channel using web scraping"""
@@ -196,8 +143,8 @@ class TelegramClient:
                 channel_name = channel_url
                 url = f"https://t.me/s/{channel_name}"
             
-            # Make the request (with proxy if configured)
-            response = self.session.get(url, timeout=config.settings.SCRAPING_PROXY_TIMEOUT)
+            # Make the request through SOCKS5 proxy
+            response = self.session.get(url, timeout=SCRAPING_PROXY_TIMEOUT)
             response.raise_for_status()
             
             # Parse the HTML
