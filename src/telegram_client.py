@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import base64
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from telethon import TelegramClient as TelethonClient, connection
@@ -20,37 +21,46 @@ class TelegramClient:
     
     def _init_client(self):
         """Initialize Telethon client with MTProto proxy"""
-        try:
-            # Configure MTProto proxy
-            if INITIAL_PROXY and INITIAL_PROXY['type'] == 'mtproto':
-                proxy = (
-                    INITIAL_PROXY['server'],
-                    int(INITIAL_PROXY['port']),
-                    INITIAL_PROXY['secret']
-                )
-                connection_type = connection.ConnectionTcpMTProxyRandomizedIntermediate
-                print(f"🔗 Configuring Telethon with MTProto proxy: {INITIAL_PROXY['server']}:{INITIAL_PROXY['port']}")
-            else:
-                proxy = None
-                connection_type = None
-                print("⚠️ No MTProto proxy configured, using direct connection")
+        # Configure MTProto proxy
+        if INITIAL_PROXY and INITIAL_PROXY['type'] == 'mtproto':
+            # Handle base64 secret decoding
+            secret_base64 = INITIAL_PROXY['secret']
+            if secret_base64.startswith('7'):  # Remove '7' prefix if present
+                secret_base64 = secret_base64[1:]
             
-            # Initialize Telethon client
-            self.client = TelethonClient(
-                StringSession(),  # Use string session for better portability
-                API_ID,
-                API_HASH,
-                connection=connection_type,
-                proxy=proxy,
-                device_model='Desktop',
-                system_version='Windows 10',
-                app_version='1.0',
-                lang_code='en'
+            # Add padding if needed
+            missing_padding = len(secret_base64) % 4
+            if missing_padding:
+                secret_base64 += '=' * (4 - missing_padding)
+            
+            # Decode base64 to bytes, then convert to hex string for Telethon
+            secret_bytes = base64.b64decode(secret_base64)
+            secret_hex = secret_bytes.hex()  # Convert to hex string for Telethon
+            print(f"🔗 Configuring Telethon with MTProto proxy: {INITIAL_PROXY['server']}:{INITIAL_PROXY['port']}")
+            
+            proxy = (
+                INITIAL_PROXY['server'],
+                int(INITIAL_PROXY['port']),
+                secret_hex  # Pass as hex string since Telethon will call fromhex() internally
             )
-            
-        except Exception as e:
-            print(f"❌ Error initializing Telethon client: {e}")
-            self.client = None
+            connection_type = connection.ConnectionTcpMTProxyRandomizedIntermediate
+        else:
+            proxy = None
+            connection_type = None
+            print("⚠️ No MTProto proxy configured, using direct connection")
+        
+        # Initialize Telethon client
+        self.client = TelethonClient(
+            StringSession(),  # Use string session for better portability
+            API_ID,
+            API_HASH,
+            connection=connection_type,
+            proxy=proxy,
+            device_model='Desktop',
+            system_version='Windows 10',
+            app_version='1.0',
+            lang_code='en'
+        )
     
     async def start_session(self):
         """Start the Telethon session with phone number authentication"""
