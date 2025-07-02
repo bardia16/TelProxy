@@ -284,7 +284,7 @@ class ProxyStorage:
         
         message_lines = [
             f"🔑 **Fresh Telegram Proxies** [{timestamp}]",
-            f"📊 **Total Proxies:** {len(proxies)}",
+            f"📊 **Total:** {len(proxies)}",
             ""
         ]
         
@@ -299,20 +299,34 @@ class ProxyStorage:
         for proxy_type, proxy_list in by_type.items():
             message_lines.append(f"**{proxy_type.upper()} ({len(proxy_list)}):**")
             
-            # Create a table-like format for each proxy type
+            # Create a compact grid layout
+            grid = []
+            current_row = []
+            
             for i, proxy in enumerate(proxy_list, 1):
-                # Create a compact display name
-                display_name = f"{i}. {proxy.server}"
+                # Create a very compact display name (just the index)
+                display_name = f"{i}"
                 
                 # Create a hyperlink with the full proxy URL
                 url = self._reconstruct_proxy_url(proxy)
                 
-                # Add the hyperlink to the message
-                message_lines.append(f"[{display_name}]({url}) (Port: {proxy.port})")
+                # Add the hyperlink to the current row
+                current_row.append(f"[{display_name}]({url})")
+                
+                # Start a new row after every 5 items
+                if len(current_row) == 5:
+                    grid.append(" | ".join(current_row))
+                    current_row = []
             
+            # Add any remaining items in the last row
+            if current_row:
+                grid.append(" | ".join(current_row))
+            
+            # Add the grid to the message
+            message_lines.extend(grid)
             message_lines.append("")
         
-        message_lines.append("🔄 *Next update in 1 hour*")
+        message_lines.append("🔄 *Updated hourly*")
         return "\n".join(message_lines)
     
     def _reconstruct_proxy_url(self, proxy: ProxyData):
