@@ -6,6 +6,8 @@ import logging
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from telegram import Bot
+from telegram.request import HTTPXRequest
+import httpx
 from config.settings import (
     API_ID, API_HASH, PHONE_NUMBER, SESSION_NAME, RATE_LIMIT_DELAY, BOT_TOKEN,
     CHANNEL_MESSAGE_LIMIT, USE_PROXY_FOR_SCRAPING, SCRAPING_PROXY_TIMEOUT,
@@ -18,7 +20,6 @@ from src.proxy_extractor import ProxyData
 class TelegramClient:
     
     def __init__(self):
-        self.bot = None if not BOT_TOKEN else Bot(token=BOT_TOKEN)
         self.session = requests.Session()
         self.is_connected = False
         self.use_bot_token = bool(BOT_TOKEN)
@@ -31,6 +32,11 @@ class TelegramClient:
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         })
+        
+        # Initialize bot with proxy if configured
+        self.bot = None
+        if BOT_TOKEN:
+            self._init_bot_with_proxy()
     
     async def start_session(self):
         if self.is_connected:
@@ -60,6 +66,56 @@ class TelegramClient:
     def set_proxy_storage(self, proxy_storage):
         """Set the proxy storage instance for accessing working proxies"""
         self.proxy_storage = proxy_storage
+        # Re-initialize bot with potential new proxies
+        if self.use_bot_token:
+            self._init_bot_with_proxy()
+    
+    def _init_bot_with_proxy(self):
+        """Initialize the Telegram bot with proxy configuration"""
+        try:
+            # Get proxy configuration
+            proxy = self._get_initial_proxy()
+            if not proxy:
+                proxy = self._get_working_proxy_for_scraping()
+            
+            if proxy:
+                # Configure proxy for bot
+                proxy_url = None
+                if proxy.proxy_type == 'http':
+                    proxy_url = f"http://{proxy.server}:{proxy.port}"
+                elif proxy.proxy_type == 'socks5':
+                    proxy_url = f"socks5://{proxy.server}:{proxy.port}"
+                    if proxy.username and proxy.password:
+                        proxy_url = f"socks5://{proxy.username}:{proxy.password}@{proxy.server}:{proxy.port}"
+                elif proxy.proxy_type == 'mtproto':
+                    # Skip MTProto proxies for bot API as they're not directly supported
+                    print("ℹ️ MTProto proxies are not supported for Bot API, skipping proxy configuration")
+                    proxy_url = None
+                
+                if proxy_url:
+                    # Create proxy-enabled request object
+                    proxy_request = HTTPXRequest(
+                        connection_pool_size=8,
+                        proxy=proxy_url,
+                        read_timeout=SCRAPING_PROXY_TIMEOUT,
+                        write_timeout=SCRAPING_PROXY_TIMEOUT,
+                        connect_timeout=SCRAPING_PROXY_TIMEOUT
+                    )
+                    
+                    # Initialize bot with proxy
+                    self.bot = Bot(token=BOT_TOKEN, request=proxy_request)
+                    print(f"🔗 Initialized bot with {proxy.proxy_type} proxy: {proxy.server}:{proxy.port}")
+                    return
+            
+            # If no proxy or proxy setup failed, initialize without proxy
+            self.bot = Bot(token=BOT_TOKEN)
+            print("ℹ️ Initialized bot without proxy")
+            
+        except Exception as e:
+            print(f"⚠️ Error initializing bot with proxy: {e}")
+            # Fallback to no proxy
+            self.bot = Bot(token=BOT_TOKEN)
+            print("ℹ️ Fallback: Initialized bot without proxy")
     
     def _get_initial_proxy(self):
         """Get the initial proxy from settings if configured"""
