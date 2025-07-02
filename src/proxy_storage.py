@@ -231,29 +231,50 @@ class ProxyStorage:
             return None
         
         try:
-            # Split proxies into multiple messages if needed
-            max_proxies_per_message = 30
+            # Maximum proxies per message (Telegram has a 4096 character limit)
+            max_proxies_per_message = 50
+            
+            # Group proxies by type for better organization
+            by_type = {}
+            for proxy in proxies:
+                if proxy.proxy_type not in by_type:
+                    by_type[proxy.proxy_type] = []
+                by_type[proxy.proxy_type].append(proxy)
+            
+            # Check if we need to split messages
             if len(proxies) > max_proxies_per_message:
-                print(f"Too many proxies ({len(proxies)}), splitting into multiple messages")
-                
-                # Group proxies by type for better organization
-                by_type = {}
-                for proxy in proxies:
-                    if proxy.proxy_type not in by_type:
-                        by_type[proxy.proxy_type] = []
-                    by_type[proxy.proxy_type].append(proxy)
+                print(f"Large number of proxies ({len(proxies)}), splitting into multiple messages")
                 
                 # Send one message per proxy type
                 message_ids = []
                 for proxy_type, proxy_list in by_type.items():
-                    message = self._format_proxy_message(proxy_list, single_type=True)
-                    message_id = await self.telegram_client.send_message(
-                        self.output_channel, message
-                    )
-                    if message_id:
-                        message_ids.append(message_id)
-                        self._record_posting_history(message_id, len(proxy_list))
-                        print(f"✅ Posted {len(proxy_list)} {proxy_type} proxies to Telegram channel")
+                    # Further split if a single type has too many proxies
+                    if len(proxy_list) > max_proxies_per_message:
+                        chunks = [proxy_list[i:i + max_proxies_per_message] 
+                                 for i in range(0, len(proxy_list), max_proxies_per_message)]
+                        
+                        for i, chunk in enumerate(chunks):
+                            message = self._format_proxy_message(
+                                chunk, 
+                                single_type=True,
+                                part_info=f"Part {i+1}/{len(chunks)}"
+                            )
+                            message_id = await self.telegram_client.send_message(
+                                self.output_channel, message
+                            )
+                            if message_id:
+                                message_ids.append(message_id)
+                                self._record_posting_history(message_id, len(chunk))
+                                print(f"✅ Posted {len(chunk)} {proxy_type} proxies (part {i+1}/{len(chunks)}) to Telegram channel")
+                    else:
+                        message = self._format_proxy_message(proxy_list, single_type=True)
+                        message_id = await self.telegram_client.send_message(
+                            self.output_channel, message
+                        )
+                        if message_id:
+                            message_ids.append(message_id)
+                            self._record_posting_history(message_id, len(proxy_list))
+                            print(f"✅ Posted {len(proxy_list)} {proxy_type} proxies to Telegram channel")
                 
                 # Pin only the first message
                 if message_ids:
@@ -278,15 +299,19 @@ class ProxyStorage:
             print(f"❌ Error posting to Telegram: {e}")
             return None
     
-    def _format_proxy_message(self, proxies: List[ProxyData], single_type=False):
+    def _format_proxy_message(self, proxies: List[ProxyData], single_type=False, part_info=None):
         now = datetime.now(timezone.utc)
         timestamp = now.strftime('%Y-%m-%d %H:%M UTC')
         
         message_lines = [
             f"🔑 **Fresh Telegram Proxies** [{timestamp}]",
-            f"📊 **Total:** {len(proxies)}",
-            ""
+            f"📊 **Total:** {len(proxies)}"
         ]
+        
+        if part_info:
+            message_lines.append(f"📑 **{part_info}**")
+            
+        message_lines.append("")
         
         # Group proxies by type
         by_type = {}
