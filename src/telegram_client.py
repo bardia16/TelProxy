@@ -9,9 +9,8 @@ from telegram import Bot
 from telegram.request import HTTPXRequest
 import httpx
 from config.settings import (
-    API_ID, API_HASH, PHONE_NUMBER, SESSION_NAME, RATE_LIMIT_DELAY, BOT_TOKEN,
-    CHANNEL_MESSAGE_LIMIT, USE_PROXY_FOR_SCRAPING, SCRAPING_PROXY_TIMEOUT,
-    INITIAL_PROXY
+    BOT_TOKEN, CHANNEL_MESSAGE_LIMIT, USE_PROXY_FOR_SCRAPING,
+    SCRAPING_PROXY_TIMEOUT, INITIAL_PROXY
 )
 import config.settings
 from src.proxy_extractor import ProxyData
@@ -33,89 +32,93 @@ class TelegramClient:
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         })
         
-        # Initialize bot with proxy if configured
-        self.bot = None
-        if BOT_TOKEN:
-            self._init_bot_with_proxy()
+        # Initialize session with proxy if configured
+        self._init_session()
+    
+    def _init_session(self):
+        """Initialize session with proxy configuration"""
+        try:
+            proxy = self._get_initial_proxy()
+            if not proxy:
+                proxy = self._get_working_proxy_for_scraping()
+            
+            if proxy:
+                self._configure_session_proxy(proxy)
+            
+        except Exception as e:
+            print(f"⚠️ Error initializing session: {e}")
+            self._configure_session_proxy(None)
+    
+    def _configure_session_proxy(self, proxy=None):
+        """Configure the requests session to use a proxy"""
+        if not proxy:
+            # Clear any existing proxy configuration
+            self.session.proxies.clear()
+            self.current_proxy = None
+            return
+        
+        try:
+            if proxy.proxy_type == 'http':
+                proxy_url = f"http://{proxy.server}:{proxy.port}"
+                self.session.proxies = {
+                    'http': proxy_url,
+                    'https': proxy_url
+                }
+            elif proxy.proxy_type == 'socks5':
+                proxy_url = f"socks5://{proxy.server}:{proxy.port}"
+                if proxy.username and proxy.password:
+                    proxy_url = f"socks5://{proxy.username}:{proxy.password}@{proxy.server}:{proxy.port}"
+                self.session.proxies = {
+                    'http': proxy_url,
+                    'https': proxy_url
+                }
+            elif proxy.proxy_type == 'mtproto':
+                # For MTProto proxies, we'll use a SOCKS5 proxy configuration
+                # This allows us to use the proxy for web scraping
+                proxy_url = f"socks5://{proxy.server}:{proxy.port}"
+                if proxy.secret:
+                    # Add the secret as the password
+                    proxy_url = f"socks5://mtproto:{proxy.secret}@{proxy.server}:{proxy.port}"
+                self.session.proxies = {
+                    'http': proxy_url,
+                    'https': proxy_url
+                }
+            
+            # Set timeout for proxy requests
+            self.session.timeout = config.settings.SCRAPING_PROXY_TIMEOUT
+            self.current_proxy = proxy
+            print(f"🔗 Configured session with {proxy.proxy_type} proxy: {proxy.server}:{proxy.port}")
+            
+        except Exception as e:
+            print(f"❌ Error configuring proxy: {e}")
+            self.session.proxies.clear()
+            self.current_proxy = None
     
     async def start_session(self):
         if self.is_connected:
             return
         
         try:
-            if self.use_bot_token and self.bot:
-                # Test the bot connection by getting bot info
-                bot_info = await self.bot.get_me()
-                self.is_connected = True
-                print(f"✅ Connected to Telegram as bot: {bot_info.username}")
-            else:
-                # For web scraping, we don't need authentication
-                self.is_connected = True
-                print("✅ Ready for web scraping")
+            # Test the connection by making a request to Telegram
+            response = self.session.get('https://t.me/', timeout=config.settings.SCRAPING_PROXY_TIMEOUT)
+            response.raise_for_status()
+            self.is_connected = True
+            print("✅ Connected to Telegram web")
             
         except Exception as e:
             print(f"❌ Error connecting to Telegram: {e}")
             self.is_connected = False
+            # Try reinitializing the session with a different proxy
+            self._init_session()
     
     async def close_session(self):
-        if self.bot:
-            # Nothing to close for the bot
-            pass
         self.is_connected = False
     
     def set_proxy_storage(self, proxy_storage):
         """Set the proxy storage instance for accessing working proxies"""
         self.proxy_storage = proxy_storage
-        # Re-initialize bot with potential new proxies
-        if self.use_bot_token:
-            self._init_bot_with_proxy()
-    
-    def _init_bot_with_proxy(self):
-        """Initialize the Telegram bot with proxy configuration"""
-        try:
-            # Get proxy configuration
-            proxy = self._get_initial_proxy()
-            if not proxy:
-                proxy = self._get_working_proxy_for_scraping()
-            
-            if proxy:
-                # Configure proxy for bot
-                proxy_url = None
-                if proxy.proxy_type == 'http':
-                    proxy_url = f"http://{proxy.server}:{proxy.port}"
-                elif proxy.proxy_type == 'socks5':
-                    proxy_url = f"socks5://{proxy.server}:{proxy.port}"
-                    if proxy.username and proxy.password:
-                        proxy_url = f"socks5://{proxy.username}:{proxy.password}@{proxy.server}:{proxy.port}"
-                elif proxy.proxy_type == 'mtproto':
-                    # Skip MTProto proxies for bot API as they're not directly supported
-                    print("ℹ️ MTProto proxies are not supported for Bot API, skipping proxy configuration")
-                    proxy_url = None
-                
-                if proxy_url:
-                    # Create proxy-enabled request object
-                    proxy_request = HTTPXRequest(
-                        connection_pool_size=8,
-                        proxy=proxy_url,
-                        read_timeout=SCRAPING_PROXY_TIMEOUT,
-                        write_timeout=SCRAPING_PROXY_TIMEOUT,
-                        connect_timeout=SCRAPING_PROXY_TIMEOUT
-                    )
-                    
-                    # Initialize bot with proxy
-                    self.bot = Bot(token=BOT_TOKEN, request=proxy_request)
-                    print(f"🔗 Initialized bot with {proxy.proxy_type} proxy: {proxy.server}:{proxy.port}")
-                    return
-            
-            # If no proxy or proxy setup failed, initialize without proxy
-            self.bot = Bot(token=BOT_TOKEN)
-            print("ℹ️ Initialized bot without proxy")
-            
-        except Exception as e:
-            print(f"⚠️ Error initializing bot with proxy: {e}")
-            # Fallback to no proxy
-            self.bot = Bot(token=BOT_TOKEN)
-            print("ℹ️ Fallback: Initialized bot without proxy")
+        # Re-initialize session with potential new proxies
+        self._init_session()
     
     def _get_initial_proxy(self):
         """Get the initial proxy from settings if configured"""
@@ -171,61 +174,10 @@ class TelegramClient:
             print(f"❌ Error getting proxy for scraping: {e}")
             return None
     
-    def _configure_session_proxy(self, proxy=None):
-        """Configure the requests session to use a proxy"""
-        if not proxy:
-            # Clear any existing proxy configuration
-            self.session.proxies.clear()
-            self.current_proxy = None
-            return
-        
-        try:
-            if proxy.proxy_type == 'http':
-                proxy_url = f"http://{proxy.server}:{proxy.port}"
-                self.session.proxies = {
-                    'http': proxy_url,
-                    'https': proxy_url
-                }
-            elif proxy.proxy_type == 'socks5':
-                proxy_url = f"socks5://{proxy.server}:{proxy.port}"
-                if proxy.username and proxy.password:
-                    proxy_url = f"socks5://{proxy.username}:{proxy.password}@{proxy.server}:{proxy.port}"
-                self.session.proxies = {
-                    'http': proxy_url,
-                    'https': proxy_url
-                }
-            elif proxy.proxy_type == 'mtproto':
-                # For MTProto proxies, we'll use HTTPS proxy configuration
-                # This allows us to use the proxy for web scraping
-                proxy_url = f"http://{proxy.server}:{proxy.port}"
-                if proxy.secret:
-                    # Add the secret as a basic auth password
-                    proxy_url = f"http://mtproto:{proxy.secret}@{proxy.server}:{proxy.port}"
-                self.session.proxies = {
-                    'http': proxy_url,
-                    'https': proxy_url
-                }
-            
-            # Set timeout for proxy requests
-            self.session.timeout = config.settings.SCRAPING_PROXY_TIMEOUT
-            self.current_proxy = proxy
-            
-        except Exception as e:
-            print(f"❌ Error configuring proxy: {e}")
-            self.session.proxies.clear()
-            self.current_proxy = None
-    
     async def get_channel_messages(self, channel_url, limit=CHANNEL_MESSAGE_LIMIT):
-        """
-        Get messages from a Telegram channel using web scraping
-        """
+        """Get messages from a Telegram channel using web scraping"""
         if not self.is_connected:
             await self.start_session()
-        
-        # Configure proxy for scraping if enabled
-        if USE_PROXY_FOR_SCRAPING and not self.current_proxy:
-            proxy = self._get_working_proxy_for_scraping()
-            self._configure_session_proxy(proxy)
         
         try:
             # Clean up the channel URL
@@ -257,32 +209,16 @@ class TelegramClient:
                 text_div = container.find('div', class_='tgme_widget_message_text')
                 text = text_div.get_text() if text_div else ''
                 
-                # Get the full HTML content of the message
-                html_content = str(text_div) if text_div else ''
-                
                 # Get message date
                 date_span = container.find('span', class_='tgme_widget_message_date')
                 date_str = date_span.find('time').get('datetime') if date_span and date_span.find('time') else ''
                 date_obj = datetime.fromisoformat(date_str.replace('Z', '+00:00')) if date_str else datetime.now()
                 
-                # Extract all href attributes from a tags
-                hrefs = []
-                if text_div:
-                    for a_tag in text_div.find_all('a'):
-                        href = a_tag.get('href')
-                        if href:
-                            hrefs.append(href)
-                
                 # Create message data structure
                 message_data = {
                     'id': message_id,
-                    'channel_id': channel_name,
-                    'channel_name': channel_name,
-                    'date': date_obj.strftime('%Y-%m-%d %H:%M:%S'),
                     'text': text,
-                    'html': html_content,
-                    'hrefs': hrefs,
-                    'combined_text': text + ' ' + html_content
+                    'date': date_obj
                 }
                 
                 messages.append(message_data)
@@ -290,86 +226,25 @@ class TelegramClient:
             return messages
             
         except Exception as e:
-            # If proxy request failed, try without proxy
-            if self.current_proxy and USE_PROXY_FOR_SCRAPING:
-                print(f"⚠️ Proxy request failed ({e}), retrying without proxy...")
-                self._configure_session_proxy(None)  # Clear proxy
-                
-                try:
-                    # Retry without proxy
-                    response = self.session.get(url, timeout=10)
-                    response.raise_for_status()
-                    
-                    # Parse the HTML (same logic as above)
-                    soup = BeautifulSoup(response.text, 'html.parser')
-                    message_containers = soup.find_all('div', class_='tgme_widget_message')
-                    
-                    messages = []
-                    for container in message_containers[:limit]:
-                        message_id = container.get('data-post', '').split('/')[-1]
-                        
-                        # Get message text
-                        text_div = container.find('div', class_='tgme_widget_message_text')
-                        text = text_div.get_text() if text_div else ''
-                        
-                        # Get the full HTML content of the message
-                        html_content = str(text_div) if text_div else ''
-                        
-                        # Get message date
-                        date_span = container.find('span', class_='tgme_widget_message_date')
-                        date_str = date_span.find('time').get('datetime') if date_span and date_span.find('time') else ''
-                        date_obj = datetime.fromisoformat(date_str.replace('Z', '+00:00')) if date_str else datetime.now()
-                        
-                        # Extract all href attributes from a tags
-                        hrefs = []
-                        if text_div:
-                            for a_tag in text_div.find_all('a'):
-                                href = a_tag.get('href')
-                                if href:
-                                    hrefs.append(href)
-                        
-                        # Create message data structure
-                        message_data = {
-                            'id': message_id,
-                            'channel_id': channel_name,
-                            'channel_name': channel_name,
-                            'date': date_obj.strftime('%Y-%m-%d %H:%M:%S'),
-                            'text': text,
-                            'html': html_content,
-                            'hrefs': hrefs,
-                            'combined_text': text + ' ' + html_content
-                        }
-                        
-                        messages.append(message_data)
-                    
-                    print(f"✅ Fallback request successful (without proxy)")
-                    return messages
-                    
-                except Exception as fallback_error:
-                    print(f"❌ Both proxy and direct requests failed: {fallback_error}")
-                    return []
-            else:
-                print(f"❌ Error fetching messages from {channel_url}: {e}")
-                return []
+            print(f"❌ Error getting channel messages: {e}")
+            # If proxy request failed, try reinitializing the session
+            self._init_session()
+            return []
     
     async def send_message(self, channel, message_text):
         """
         Send a message to a Telegram channel using the bot
         """
-        if not self.bot or not self.is_connected:
+        if not self.telethon_client or not self.is_connected:
             await self.start_session()
         
-        if not self.bot:
-            print("❌ Bot token not configured. Cannot send messages.")
-            return None
-        
         try:
-            message = await self.bot.send_message(
-                chat_id=channel,
-                text=message_text,
+            message = await self.telethon_client.send_message(
+                channel,
+                message_text,
                 parse_mode='Markdown'
             )
-            return message.message_id
+            return message.id
         except Exception as e:
             print(f"❌ Error sending message to {channel}: {e}")
             return None
@@ -378,18 +253,15 @@ class TelegramClient:
         """
         Edit an existing message in a Telegram channel using the bot
         """
-        if not self.bot or not self.is_connected:
+        if not self.telethon_client or not self.is_connected:
             await self.start_session()
         
-        if not self.bot:
-            print("❌ Bot token not configured. Cannot edit messages.")
-            return False
-        
         try:
-            await self.bot.edit_message_text(
-                chat_id=channel,
-                message_id=message_id,
-                text=new_text,
+            await self.telethon_client.edit_message(
+                channel,
+                message_id,
+                None,
+                new_text,
                 parse_mode='Markdown'
             )
             return True
@@ -401,17 +273,13 @@ class TelegramClient:
         """
         Get pinned messages from a Telegram channel using the bot
         """
-        if not self.bot or not self.is_connected:
+        if not self.telethon_client or not self.is_connected:
             await self.start_session()
         
-        if not self.bot:
-            print("❌ Bot token not configured. Cannot get pinned messages.")
-            return []
-        
         try:
-            chat = await self.bot.get_chat(chat_id=channel)
+            chat = await self.telethon_client.get_chat(chat_id=channel)
             if chat.pinned_message:
-                return [chat.pinned_message.message_id]
+                return [chat.pinned_message.id]
             else:
                 return []
         except Exception as e:
@@ -422,17 +290,13 @@ class TelegramClient:
         """
         Pin a message in a Telegram channel using the bot
         """
-        if not self.bot or not self.is_connected:
+        if not self.telethon_client or not self.is_connected:
             await self.start_session()
         
-        if not self.bot:
-            print("❌ Bot token not configured. Cannot pin messages.")
-            return False
-        
         try:
-            await self.bot.pin_chat_message(
-                chat_id=channel,
-                message_id=message_id,
+            await self.telethon_client.pin_message(
+                channel,
+                message_id,
                 disable_notification=True
             )
             return True
