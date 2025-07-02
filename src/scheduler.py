@@ -111,7 +111,7 @@ class ProxyScheduler:
             
             if OUTPUT_CHANNEL:
                 print("📤 Posting proxies to Telegram channel...")
-                message_id = await self.proxy_storage.post_proxies_to_telegram(working_proxies)
+                message_id = await self.proxy_storage.post_proxies_to_telegram(working_proxies, validator=self.proxy_validator)
                 if message_id:
                     print(f"✅ Successfully posted to channel with message ID: {message_id}")
             else:

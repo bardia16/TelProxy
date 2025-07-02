@@ -225,7 +225,7 @@ class ProxyStorage:
                         f.write(f"{proxy.server}:{proxy.port}\n")
                 f.write("\n")
     
-    async def post_proxies_to_telegram(self, proxies: List[ProxyData]):
+    async def post_proxies_to_telegram(self, proxies: List[ProxyData], validator=None):
         if not self.telegram_client or not self.output_channel:
             print("Telegram client or output channel not configured for posting")
             return None
@@ -247,6 +247,8 @@ class ProxyStorage:
                 
                 # Send one message per proxy type
                 message_ids = []
+                global_proxy_counter = 0  # Track global proxy numbering across all messages
+                
                 for proxy_type, proxy_list in by_type.items():
                     # Further split if a single type has too many proxies
                     if len(proxy_list) > max_proxies_per_message:
@@ -257,8 +259,11 @@ class ProxyStorage:
                             message = self._format_proxy_message(
                                 chunk, 
                                 single_type=True,
-                                part_info=f"Part {i+1}/{len(chunks)}"
+                                part_info=f"Part {i+1}/{len(chunks)}",
+                                validator=validator,
+                                start_number=global_proxy_counter + 1
                             )
+                            global_proxy_counter += len(chunk)
                             message_id = await self.telegram_client.send_message(
                                 self.output_channel, message
                             )
@@ -267,7 +272,13 @@ class ProxyStorage:
                                 self._record_posting_history(message_id, len(chunk))
                                 print(f"✅ Posted {len(chunk)} {proxy_type} proxies (part {i+1}/{len(chunks)}) to Telegram channel")
                     else:
-                        message = self._format_proxy_message(proxy_list, single_type=True)
+                        message = self._format_proxy_message(
+                            proxy_list, 
+                            single_type=True, 
+                            validator=validator,
+                            start_number=global_proxy_counter + 1
+                        )
+                        global_proxy_counter += len(proxy_list)
                         message_id = await self.telegram_client.send_message(
                             self.output_channel, message
                         )
@@ -283,7 +294,7 @@ class ProxyStorage:
                 return message_ids[0] if message_ids else None
             else:
                 # Send all proxies in one message
-                message = self._format_proxy_message(proxies)
+                message = self._format_proxy_message(proxies, validator=validator, start_number=1)
                 message_id = await self.telegram_client.send_message(
                     self.output_channel, message
                 )
@@ -299,7 +310,7 @@ class ProxyStorage:
             print(f"❌ Error posting to Telegram: {e}")
             return None
     
-    def _format_proxy_message(self, proxies: List[ProxyData], single_type=False, part_info=None):
+    def _format_proxy_message(self, proxies: List[ProxyData], single_type=False, part_info=None, validator=None, start_number=1):
         now = datetime.now(timezone.utc)
         timestamp = now.strftime('%Y-%m-%d %H:%M UTC')
         
@@ -311,6 +322,7 @@ class ProxyStorage:
         if part_info:
             message_lines.append(f"📑 **{part_info}**")
             
+        message_lines.append("⚡ *Sorted by ping (fastest first)*")
         message_lines.append("")
         
         # Group proxies by type
@@ -320,17 +332,31 @@ class ProxyStorage:
                 by_type[proxy.proxy_type] = []
             by_type[proxy.proxy_type].append(proxy)
         
-        # Process each proxy type
+        # Sort each type by ping if validator is provided
+        if validator:
+            for proxy_type in by_type:
+                by_type[proxy_type].sort(key=lambda p: validator.get_proxy_ping(p))
+        
+        # Process each proxy type with continuous numbering
+        current_number = start_number
         for proxy_type, proxy_list in by_type.items():
             message_lines.append(f"**{proxy_type.upper()} ({len(proxy_list)}):**")
             
-            # Create a compact grid layout
+            # Create a compact grid layout with ping info
             grid = []
             current_row = []
             
-            for i, proxy in enumerate(proxy_list, 1):
-                # Create a very compact display name (just the index)
-                display_name = f"{i}"
+            for proxy in proxy_list:
+                # Create display name with ping info
+                if validator:
+                    ping = validator.get_proxy_ping(proxy)
+                    if ping != float('inf'):
+                        ping_ms = int(ping * 1000)
+                        display_name = f"{current_number}({ping_ms}ms)"
+                    else:
+                        display_name = f"{current_number}"
+                else:
+                    display_name = f"{current_number}"
                 
                 # Create a hyperlink with the full proxy URL
                 url = self._reconstruct_proxy_url(proxy)
@@ -338,8 +364,11 @@ class ProxyStorage:
                 # Add the hyperlink to the current row
                 current_row.append(f"[{display_name}]({url})")
                 
-                # Start a new row after every 5 items
-                if len(current_row) == 5:
+                # Increment the global counter
+                current_number += 1
+                
+                # Start a new row after every 4 items (reduced from 5 to accommodate ping info)
+                if len(current_row) == 4:
                     grid.append(" | ".join(current_row))
                     current_row = []
             
