@@ -143,7 +143,12 @@ class TelegramClient:
             return None
         
         try:
-            # First try to get a proxy from storage if available
+            # First try to get the initial proxy since it's configured manually
+            initial_proxy = self._get_initial_proxy()
+            if initial_proxy:
+                return initial_proxy
+            
+            # Then try to get a proxy from storage if available
             if self.proxy_storage:
                 if config.settings.SCRAPING_PROXY_TYPE == 'auto':
                     # Try HTTP first, then SOCKS5
@@ -158,11 +163,6 @@ class TelegramClient:
                     proxy = all_proxies[0]
                     print(f"🔗 Using stored {proxy.proxy_type} proxy: {proxy.server}:{proxy.port}")
                     return proxy
-            
-            # If no working proxies in storage, try initial proxy
-            initial_proxy = self._get_initial_proxy()
-            if initial_proxy:
-                return initial_proxy
             
             print("⚠️ No working proxies found for scraping")
             return None
@@ -190,6 +190,17 @@ class TelegramClient:
                 proxy_url = f"socks5://{proxy.server}:{proxy.port}"
                 if proxy.username and proxy.password:
                     proxy_url = f"socks5://{proxy.username}:{proxy.password}@{proxy.server}:{proxy.port}"
+                self.session.proxies = {
+                    'http': proxy_url,
+                    'https': proxy_url
+                }
+            elif proxy.proxy_type == 'mtproto':
+                # For MTProto proxies, we'll use HTTPS proxy configuration
+                # This allows us to use the proxy for web scraping
+                proxy_url = f"http://{proxy.server}:{proxy.port}"
+                if proxy.secret:
+                    # Add the secret as a basic auth password
+                    proxy_url = f"http://mtproto:{proxy.secret}@{proxy.server}:{proxy.port}"
                 self.session.proxies = {
                     'http': proxy_url,
                     'https': proxy_url
