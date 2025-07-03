@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 from src.telegram_client import TelegramClient
 from config.channels import TELEGRAM_CHANNELS
+from src.utils import async_retry_on_timeout
 
 
 class ChannelScraper:
@@ -45,6 +46,7 @@ class ChannelScraper:
         print(f"Total relevant messages found: {len(all_messages)}")
         return all_messages
     
+    @async_retry_on_timeout(max_retries=5, delay=2.0)
     async def scrape_single_channel(self, channel_url: str):
         try:
             channel_entity = await self.telegram_client.get_channel_entity(channel_url)

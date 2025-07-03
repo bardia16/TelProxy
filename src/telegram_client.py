@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 from telegram import Bot
 from config.settings import API_ID, API_HASH, PHONE_NUMBER, SESSION_NAME, RATE_LIMIT_DELAY, BOT_TOKEN
+from src.utils import infinite_retry
 
 
 class TelegramClient:
@@ -146,7 +147,7 @@ class TelegramClient:
     
     async def edit_message(self, channel, message_id, new_text):
         """
-        Edit an existing message in a Telegram channel using the bot
+        Edit an existing message in a Telegram channel using the bot with infinite retry
         """
         if not self.bot or not self.is_connected:
             await self.start_session()
@@ -154,8 +155,8 @@ class TelegramClient:
         if not self.bot:
             print("❌ Bot token not configured. Cannot edit messages.")
             return False
-        
-        try:
+
+        async def _edit_attempt():
             await self.bot.edit_message_text(
                 chat_id=channel,
                 message_id=message_id,
@@ -163,13 +164,16 @@ class TelegramClient:
                 parse_mode='Markdown'
             )
             return True
+
+        try:
+            return await infinite_retry(_edit_attempt, initial_delay=1.0, max_delay=30.0)
         except Exception as e:
             print(f"❌ Error editing message {message_id} in {channel}: {e}")
             return False
     
     async def get_pinned_messages(self, channel):
         """
-        Get pinned messages from a Telegram channel using the bot
+        Get pinned messages from a Telegram channel using the bot with infinite retry
         """
         if not self.bot or not self.is_connected:
             await self.start_session()
@@ -177,13 +181,15 @@ class TelegramClient:
         if not self.bot:
             print("❌ Bot token not configured. Cannot get pinned messages.")
             return []
-        
-        try:
+
+        async def _get_pinned_attempt():
             chat = await self.bot.get_chat(chat_id=channel)
             if chat.pinned_message:
                 return [chat.pinned_message.message_id]
-            else:
-                return []
+            return []
+
+        try:
+            return await infinite_retry(_get_pinned_attempt, initial_delay=1.0, max_delay=30.0)
         except Exception as e:
             print(f"❌ Error getting pinned messages from {channel}: {e}")
             return []
