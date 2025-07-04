@@ -13,7 +13,7 @@ class ProxyValidator:
         self.ping_results = {}
         self.ping_measurements = PING_MEASUREMENTS
         self.ping_delay = PING_DELAY
-        self.validation_api_url = "http://100.76.79.59:8000/validate"
+        self.validation_api_url = "http://127.0.0.1:8000/validate"
     
     async def validate_all_proxies(self, proxies: List[ProxyData]):
         print(f"Starting validation of {len(proxies)} proxies with timeout {self.timeout}s...")
@@ -76,8 +76,10 @@ class ProxyValidator:
                 ) as response:
                     if response.status == 200:
                         result = await response.json()
-                        # Store ping result
+                        # Store ping result and handle telegram connectivity for MTProto
                         self.ping_results[proxy_key] = result.get("ping", float('inf'))
+                        if proxy.proxy_type == "mtproto":
+                            return result.get("telegram_connectivity", False)
                         return result.get("valid", False)
                     return False
             

@@ -28,6 +28,23 @@ class ValidationResponse(BaseModel):
     telegram_connectivity: Optional[bool] = None  # Whether Telegram domains are accessible
     telegram_results: Optional[dict] = None  # Detailed Telegram connectivity results
 
+class HealthResponse(BaseModel):
+    status: str
+    telegram_domains_accessible: bool
+
+@app.get("/health", response_model=HealthResponse)
+async def health_check():
+    # Test Telegram domain connectivity
+    telegram_test = await test_telegram_connectivity()
+    return HealthResponse(
+        status="healthy",
+        telegram_domains_accessible=telegram_test["success"]
+    )
+
+@app.get("/")
+async def root():
+    return {"status": "running", "endpoints": ["/validate", "/health"]}
+
 async def measure_connection_ping(host: str, port: int, timeout: float = 5) -> float:
     try:
         start_time = time.time()
@@ -42,17 +59,22 @@ async def measure_connection_ping(host: str, port: int, timeout: float = 5) -> f
         return float('inf')
 
 async def measure_proxy_ping(proxy_req: ProxyRequest) -> List[float]:
-    host, port = proxy_req.proxy.split(':')
-    port = int(port)
-    ping_times = []
-    
-    for _ in range(proxy_req.ping_count):
-        ping_time = await measure_connection_ping(host, port)
-        ping_times.append(ping_time)
-        if _ < proxy_req.ping_count - 1:  # Don't sleep after last measurement
-            await asyncio.sleep(proxy_req.ping_delay)
-    
-    return ping_times
+    try:
+        host, port = proxy_req.proxy.split(':')
+        port = int(port)
+        ping_times = []
+        
+        for _ in range(proxy_req.ping_count):
+            ping_time = await measure_connection_ping(host, port)
+            ping_times.append(ping_time)
+            if _ < proxy_req.ping_count - 1:  # Don't sleep after last measurement
+                await asyncio.sleep(proxy_req.ping_delay)
+        
+        return ping_times
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid proxy format. Expected 'host:port', got '{proxy_req.proxy}'")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error measuring ping: {str(e)}")
 
 async def test_telegram_connectivity() -> dict:
     results = {}
@@ -116,36 +138,37 @@ async def validate_proxy(proxy_req: ProxyRequest):
                 telegram_results=telegram_test_results
             )
         else:
-            # Test the proxy with httpbin.org/ip to get the proxied IP
-            response = requests.get(
-                "http://httpbin.org/ip",
-                proxies=proxies,
-                timeout=5
-            )
-
-            if response.status_code == 200:
-                json_response = response.json()
-                return ValidationResponse(
-                    valid=True,
-                    ip=json_response.get('origin'),
-                    ping=avg_ping,
-                    ping_measurements=ping_times
+            try:
+                # Test the proxy with httpbin.org/ip to get the proxied IP
+                response = requests.get(
+                    "http://httpbin.org/ip",
+                    proxies=proxies,
+                    timeout=5
                 )
-            else:
+
+                if response.status_code == 200:
+                    json_response = response.json()
+                    return ValidationResponse(
+                        valid=True,
+                        ip=json_response.get('origin'),
+                        ping=avg_ping,
+                        ping_measurements=ping_times
+                    )
+                else:
+                    return ValidationResponse(
+                        valid=False,
+                        error=f"HTTP {response.status_code}",
+                        ping=float('inf'),
+                        ping_measurements=[float('inf')] * proxy_req.ping_count
+                    )
+            except requests.RequestException as e:
                 return ValidationResponse(
                     valid=False,
-                    error=f"HTTP {response.status_code}",
+                    error=f"Proxy test failed: {str(e)}",
                     ping=float('inf'),
                     ping_measurements=[float('inf')] * proxy_req.ping_count
                 )
 
-    except requests.RequestException as e:
-        return ValidationResponse(
-            valid=False,
-            error=str(e),
-            ping=float('inf'),
-            ping_measurements=[float('inf')] * proxy_req.ping_count
-        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -6,7 +6,7 @@ RED='\033[0;31m'
 NC='\033[0m' # No Color
 BLUE='\033[0;34m'
 
-VALIDATION_SERVER="http://100.76.79.59:8000"
+VALIDATION_SERVER="http://127.0.0.1:8000"
 
 echo -e "${BLUE}Testing Connection to Validation Server${NC}\n"
 
@@ -87,10 +87,10 @@ echo -e "\n"
 echo -e "${BLUE}All tests completed!${NC}"
 echo -e "If all tests passed, your scraper can communicate with the validation server."
 echo -e "If any test failed, check:"
-echo -e "1. Tailscale connection status"
-echo -e "2. Validation server is running"
-echo -e "3. Port 8000 is open on the validation server"
-echo -e "4. No firewall rules blocking the connection"
+echo -e "1. SSH tunnel is active (ssh -R 8000:localhost:8000)"
+echo -e "2. Validation server is running on your local machine"
+echo -e "3. Port 8000 is not being used by another process"
+echo -e "4. Your SSH connection is stable"
 
 # Print validation server info
 echo -e "\n${BLUE}Validation Server Info:${NC}"
