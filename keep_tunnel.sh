@@ -1,68 +1,48 @@
 #!/bin/bash
 
-# Load configuration from .env file
-if [ -f .env ]; then
-    export $(cat .env | grep -v '^#' | xargs)
-else
+# Check and load config from .env
+if [ ! -f .env ]; then
     echo "Error: .env file not found!"
     echo "Please create a .env file with REMOTE_USER and REMOTE_HOST variables."
-    exit 1
-fi
-
-# Check required variables
-if [ -z "$REMOTE_USER" ] || [ -z "$REMOTE_HOST" ]; then
-    echo "Error: REMOTE_USER and REMOTE_HOST must be set in .env file!"
-    echo "Example .env contents:"
+    echo "Example:"
     echo "REMOTE_USER=your_username"
     echo "REMOTE_HOST=your_host"
     exit 1
 fi
 
-# Port configuration
-LOCAL_PORT=9100
-REMOTE_PORT=9100
+# Load config from .env
+source .env
 
-# Colors for output
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# Check required variables
+if [ -z "$REMOTE_USER" ]; then
+    echo "Error: REMOTE_USER must be set in .env file!"
+    exit 1
+fi
+if [ -z "$REMOTE_HOST" ]; then
+    echo "Error: REMOTE_HOST must be set in .env file!"
+    exit 1
+fi
 
-echo -e "${BLUE}Starting SSH tunnel monitor${NC}"
-echo -e "Local port: ${GREEN}${LOCAL_PORT}${NC}"
-echo -e "Remote port: ${GREEN}${REMOTE_PORT}${NC}"
-echo -e "Remote host: ${GREEN}${REMOTE_HOST}${NC}"
-echo -e "Remote user: ${GREEN}${REMOTE_USER}${NC}"
+# SSH tunnel command - modified to use localhost explicitly
+SSH_CMD="ssh -v -R localhost:9100:127.0.0.1:9100 $REMOTE_USER@$REMOTE_HOST -p 22"
+
+echo "Starting SSH tunnel monitor..."
+echo "Command: $SSH_CMD"
+echo
+echo "Press Ctrl+C to stop the monitor"
+echo
 
 while true; do
-    # Check if the tunnel is already running
-    if ! nc -z localhost ${LOCAL_PORT} 2>/dev/null; then
-        echo -e "\n${RED}Tunnel is down. Restarting...${NC}"
-        
-        # Start the SSH tunnel in the background
-        ssh -o ServerAliveInterval=30 \
-            -o ServerAliveCountMax=3 \
-            -o ExitOnForwardFailure=yes \
-            -o StrictHostKeyChecking=accept-new \
-            -R ${REMOTE_PORT}:127.0.0.1:${LOCAL_PORT} \
-            ${REMOTE_USER}@${REMOTE_HOST} &
-        
-        # Store the SSH process ID
-        SSH_PID=$!
-        
-        # Wait for tunnel to establish
-        for i in {1..5}; do
-            if nc -z localhost ${LOCAL_PORT} 2>/dev/null; then
-                echo -e "${GREEN}Tunnel established successfully!${NC}"
-                break
-            fi
-            echo -n "."
-            sleep 1
-        done
+    # Check if tunnel is running
+    if ! netstat -an | grep -q ":9100"; then
+        echo "Tunnel is down. Restarting..."
+        # Kill any existing SSH processes
+        pkill -f "ssh.*9100" > /dev/null 2>&1
+        # Start new tunnel
+        $SSH_CMD
+        sleep 5
     else
         echo -n "."
+        sleep 5
     fi
-    
-    # Check every 5 seconds
-    sleep 5
 done 

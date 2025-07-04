@@ -29,8 +29,8 @@ if not defined REMOTE_HOST (
     exit /b 1
 )
 
-:: SSH tunnel command
-set "SSH_CMD=ssh -R 9100:127.0.0.1:9100 %REMOTE_USER%@%REMOTE_HOST% -p 22"
+:: SSH tunnel command - modified to use localhost explicitly
+set "SSH_CMD=ssh -v -R localhost:9100:127.0.0.1:9100 %REMOTE_USER%@%REMOTE_HOST% -p 22"
 
 echo Starting SSH tunnel monitor...
 echo Command: %SSH_CMD%
