@@ -14,9 +14,9 @@ class ProxyValidator:
         self.ping_measurements = PING_MEASUREMENTS
         self.ping_delay = PING_DELAY
         self.validation_api_url = "http://127.0.0.1:9100/validate"
-        self.batch_size = 10  # Process 5 proxies at a time
-        self.batch_delay = 0.5  # Wait 2 seconds between batches
-        self.max_retries = 1  # Maximum number of retries for failed validations
+        self.batch_size = 50
+        self.batch_delay = 1
+        self.max_retries = 2
     
     async def validate_all_proxies(self, proxies: List[ProxyData]):
         print(f"Starting validation of {len(proxies)} proxies with timeout {self.timeout}s...")
@@ -45,14 +45,14 @@ class ProxyValidator:
                 if isinstance(result, Exception):
                     print(f"  {proxy_key}: ✗ Error - {type(result).__name__}: {result}")
                     self.validation_results[proxy_key] = False
-                    self.ping_results[proxy_key] = float('inf')
+                    self.ping_results[proxy_key] = None
                 elif result:
                     working_proxies.append(proxy)
                     self.validation_results[proxy_key] = True
                     print(f"  {proxy_key}: ✓ Working")
                 else:
                     self.validation_results[proxy_key] = False
-                    self.ping_results[proxy_key] = float('inf')
+                    self.ping_results[proxy_key] = None
                     print(f"  {proxy_key}: ✗ Failed validation")
             
             # Wait before processing the next batch
@@ -60,7 +60,7 @@ class ProxyValidator:
                 print(f"Waiting {self.batch_delay}s before next batch...")
                 await asyncio.sleep(self.batch_delay)
         
-        # Sort working proxies by ping (lowest ping first)
+        # Sort working proxies by ping (lowest ping first), handling None values
         working_proxies.sort(key=lambda proxy: self.get_proxy_ping(proxy))
         
         print(f"\nValidation complete: {len(working_proxies)}/{len(proxies)} proxies are working")
@@ -127,9 +127,12 @@ class ProxyValidator:
         return [p for p in proxies if self.get_validation_status(p)]
     
     def get_proxy_ping(self, proxy: ProxyData):
-        return self.ping_results.get(f"{proxy.server}:{proxy.port}", float('inf'))
+        """Get the ping time for a proxy. Returns float('inf') if no ping data or failed ping."""
+        ping = self.ping_results.get(f"{proxy.server}:{proxy.port}")
+        return float('inf') if ping is None else ping
     
     def get_sorted_proxies_by_ping(self, proxies: List[ProxyData]):
+        """Sort proxies by ping time, handling None values."""
         return sorted(proxies, key=lambda p: self.get_proxy_ping(p))
     
     def configure_ping_settings(self, measurements: int = 5, delay: float = 0.2):
