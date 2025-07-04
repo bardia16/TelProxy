@@ -1,0 +1,154 @@
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import requests
+import asyncio
+import socket
+import time
+from typing import Optional, List
+
+app = FastAPI(title="Proxy Validation Service")
+
+# Telegram test domains (same as original code)
+TELEGRAM_TEST_DOMAINS = ["149.154.175.53", "149.154.167.51"]
+
+class ProxyRequest(BaseModel):
+    proxy: str
+    proxy_type: Optional[str] = "http"
+    username: Optional[str] = None
+    password: Optional[str] = None
+    ping_count: Optional[int] = 5  # Number of ping measurements
+    ping_delay: Optional[float] = 0.2  # Delay between pings
+
+class ValidationResponse(BaseModel):
+    valid: bool
+    error: Optional[str] = None
+    ip: Optional[str] = None
+    ping: Optional[float] = None  # Average ping in seconds
+    ping_measurements: Optional[List[float]] = None  # Individual ping measurements
+    telegram_connectivity: Optional[bool] = None  # Whether Telegram domains are accessible
+    telegram_results: Optional[dict] = None  # Detailed Telegram connectivity results
+
+async def measure_connection_ping(host: str, port: int, timeout: float = 5) -> float:
+    try:
+        start_time = time.time()
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(host, port),
+            timeout=timeout
+        )
+        writer.close()
+        await writer.wait_closed()
+        return time.time() - start_time
+    except Exception:
+        return float('inf')
+
+async def measure_proxy_ping(proxy_req: ProxyRequest) -> List[float]:
+    host, port = proxy_req.proxy.split(':')
+    port = int(port)
+    ping_times = []
+    
+    for _ in range(proxy_req.ping_count):
+        ping_time = await measure_connection_ping(host, port)
+        ping_times.append(ping_time)
+        if _ < proxy_req.ping_count - 1:  # Don't sleep after last measurement
+            await asyncio.sleep(proxy_req.ping_delay)
+    
+    return ping_times
+
+async def test_telegram_connectivity() -> dict:
+    results = {}
+    any_success = False
+    
+    for domain in TELEGRAM_TEST_DOMAINS:
+        try:
+            success = await measure_connection_ping(domain, 443) != float('inf')
+            results[domain] = success
+            if success:
+                any_success = True
+        except Exception as e:
+            results[domain] = False
+    
+    return {
+        "success": any_success,
+        "domain_results": results
+    }
+
+@app.post("/validate", response_model=ValidationResponse)
+async def validate_proxy(proxy_req: ProxyRequest):
+    try:
+        # Measure ping first
+        ping_times = await measure_proxy_ping(proxy_req)
+        valid_pings = [p for p in ping_times if p != float('inf')]
+        avg_ping = sum(valid_pings) / len(valid_pings) if valid_pings else float('inf')
+
+        # Initialize telegram test results
+        telegram_test_results = None
+        telegram_connectivity = None
+
+        # For MTProto proxies, test Telegram connectivity
+        if proxy_req.proxy_type == "mtproto":
+            telegram_test_results = await test_telegram_connectivity()
+            telegram_connectivity = telegram_test_results["success"]
+
+        # Configure the proxy URL based on type
+        if proxy_req.proxy_type == "socks5":
+            proxy_url = f"socks5://{proxy_req.proxy}"
+        else:
+            proxy_url = f"http://{proxy_req.proxy}"
+
+        # Add authentication if provided
+        if proxy_req.username and proxy_req.password:
+            proxy_url = f"{proxy_url.split('://')[0]}://{proxy_req.username}:{proxy_req.password}@{proxy_url.split('://')[1]}"
+
+        proxies = {
+            "http": proxy_url,
+            "https": proxy_url
+        }
+
+        # For non-MTProto proxies, test with httpbin
+        # For MTProto, we only care about Telegram connectivity
+        if proxy_req.proxy_type == "mtproto":
+            is_valid = telegram_connectivity if telegram_connectivity is not None else True
+            return ValidationResponse(
+                valid=is_valid,
+                ping=avg_ping,
+                ping_measurements=ping_times,
+                telegram_connectivity=telegram_connectivity,
+                telegram_results=telegram_test_results
+            )
+        else:
+            # Test the proxy with httpbin.org/ip to get the proxied IP
+            response = requests.get(
+                "http://httpbin.org/ip",
+                proxies=proxies,
+                timeout=5
+            )
+
+            if response.status_code == 200:
+                json_response = response.json()
+                return ValidationResponse(
+                    valid=True,
+                    ip=json_response.get('origin'),
+                    ping=avg_ping,
+                    ping_measurements=ping_times
+                )
+            else:
+                return ValidationResponse(
+                    valid=False,
+                    error=f"HTTP {response.status_code}",
+                    ping=float('inf'),
+                    ping_measurements=[float('inf')] * proxy_req.ping_count
+                )
+
+    except requests.RequestException as e:
+        return ValidationResponse(
+            valid=False,
+            error=str(e),
+            ping=float('inf'),
+            ping_measurements=[float('inf')] * proxy_req.ping_count
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000) 
