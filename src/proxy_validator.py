@@ -13,7 +13,7 @@ class ProxyValidator:
         self.ping_results = {}
         self.ping_measurements = PING_MEASUREMENTS
         self.ping_delay = PING_DELAY
-        self.validation_api_url = "http://127.0.0.1:8000/validate"
+        self.validation_api_url = "http://127.0.0.1:9100/validate"
     
     async def validate_all_proxies(self, proxies: List[ProxyData]):
         print(f"Starting validation of {len(proxies)} proxies with timeout {self.timeout}s...")

@@ -6,7 +6,7 @@ RED='\033[0;31m'
 NC='\033[0m' # No Color
 BLUE='\033[0;34m'
 
-VALIDATION_SERVER="http://127.0.0.1:8000"
+VALIDATION_SERVER="http://127.0.0.1:9100"
 
 echo -e "${BLUE}Testing Connection to Validation Server${NC}\n"
 
