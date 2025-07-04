@@ -157,24 +157,34 @@ class ProxyScheduler:
         print("-" * 60)
         
         for i, msg in enumerate(messages[:max_messages]):
-            print(f"Message {i+1}/{min(max_messages, len(messages))} from {msg['channel']} on {msg['date'].strftime('%Y-%m-%d')}:")
-            print("-" * 40)
-            print(f"Text: {msg['text'][:200]}..." if len(msg['text']) > 200 else f"Text: {msg['text']}")
-            
-            # Print HTML content if available
-            if 'html' in msg and msg['html']:
-                html_preview = msg['html'][:100] + "..." if len(msg['html']) > 100 else msg['html']
-                print(f"HTML: {html_preview}")
-            
-            # Print href attributes
-            if 'hrefs' in msg and msg['hrefs']:
-                print(f"Href attributes: {len(msg['hrefs'])}")
-                for j, href in enumerate(msg['hrefs'][:3]):
-                    print(f"  {j+1}. {href[:100]}..." if len(href) > 100 else f"  {j+1}. {href}")
-                if len(msg['hrefs']) > 3:
-                    print(f"  ... and {len(msg['hrefs']) - 3} more href attributes")
-            
-            print("-" * 40)
+            try:
+                channel = msg.get('channel', 'unknown')
+                date = msg.get('date', datetime.now(timezone.utc))
+                text = msg.get('text', '')
+                html = msg.get('html', '')
+                hrefs = msg.get('hrefs', [])
+                
+                print(f"Message {i+1}/{min(max_messages, len(messages))} from {channel} on {date.strftime('%Y-%m-%d')}:")
+                print("-" * 40)
+                print(f"Text: {text[:200]}..." if len(text) > 200 else f"Text: {text}")
+                
+                # Print HTML content if available
+                if html:
+                    html_preview = html[:100] + "..." if len(html) > 100 else html
+                    print(f"HTML: {html_preview}")
+                
+                # Print href attributes
+                if hrefs:
+                    print(f"Href attributes: {len(hrefs)}")
+                    for j, href in enumerate(hrefs[:3]):
+                        print(f"  {j+1}. {href[:100]}..." if len(href) > 100 else f"  {j+1}. {href}")
+                    if len(hrefs) > 3:
+                        print(f"  ... and {len(hrefs) - 3} more href attributes")
+                
+                print("-" * 40)
+            except Exception as e:
+                print(f"Error printing message {i+1}: {e}")
+                continue
         
         if len(messages) > max_messages:
             print(f"... and {len(messages) - max_messages} more messages")

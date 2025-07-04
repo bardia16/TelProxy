@@ -21,25 +21,43 @@ echo -e "\n"
 
 # Test 2: API Response Test
 echo -e "${BLUE}Test 2: Testing API Response${NC}"
-RESPONSE=$(curl -s -X POST "${VALIDATION_SERVER}/validate" \
+RESPONSE=$(curl -v -s -X POST "${VALIDATION_SERVER}/validate" \
   -H "Content-Type: application/json" \
   -w "\nStatus: %{http_code}" \
   -d '{
-    "proxy": "1.1.1.1:80",
+    "proxy": "8.8.8.8:80",
     "proxy_type": "http",
-    "ping_count": 1
-  }')
+    "ping_count": 1,
+    "ping_delay": 0.1
+  }' 2>&1)
 
 HTTP_STATUS=$(echo "$RESPONSE" | grep "Status:" | cut -d' ' -f2)
-RESPONSE_BODY=$(echo "$RESPONSE" | grep -v "Status:")
+RESPONSE_BODY=$(echo "$RESPONSE" | grep -v "Status:" | grep -v "^*" | grep -v "^>" | grep -v "^<")
+
+echo -e "Full response details:"
+echo "$RESPONSE"
+echo -e "\nStatus code: ${HTTP_STATUS}"
 
 if [ "$HTTP_STATUS" = "200" ]; then
     echo -e "${GREEN}✓ API is responding correctly${NC}"
 else
     echo -e "${RED}✗ API returned status ${HTTP_STATUS}${NC}"
 fi
-echo "Response:"
-echo "$RESPONSE_BODY" | python3 -m json.tool
+
+echo -e "\nTrying to parse response as JSON:"
+if [ ! -z "$RESPONSE_BODY" ]; then
+    if echo "$RESPONSE_BODY" | python3 -m json.tool > /dev/null 2>&1; then
+        echo -e "${GREEN}✓ Response is valid JSON${NC}"
+        echo "Formatted response:"
+        echo "$RESPONSE_BODY" | python3 -m json.tool
+    else
+        echo -e "${RED}✗ Response is not valid JSON${NC}"
+        echo "Raw response body:"
+        echo "$RESPONSE_BODY"
+    fi
+else
+    echo -e "${RED}✗ Response body is empty${NC}"
+fi
 echo -e "\n"
 
 # Test 3: Testing with real proxy from your system
@@ -52,7 +70,7 @@ curl -s -X POST "${VALIDATION_SERVER}/validate" \
     \"proxy\": \"${PROXY}\",
     \"proxy_type\": \"http\",
     \"ping_count\": 3
-  }" | python3 -m json.tool
+  }" | python3 -m json.tool 2>/dev/null || echo "Failed to parse response as JSON"
 echo -e "\n"
 
 # Test 4: MTProto Test (Telegram Connectivity)
@@ -63,7 +81,7 @@ curl -s -X POST "${VALIDATION_SERVER}/validate" \
     "proxy": "1.1.1.1:443",
     "proxy_type": "mtproto",
     "ping_count": 1
-  }' | python3 -m json.tool
+  }' | python3 -m json.tool 2>/dev/null || echo "Failed to parse response as JSON"
 echo -e "\n"
 
 # Test 5: Network Performance Test
@@ -87,9 +105,9 @@ echo -e "\n"
 echo -e "${BLUE}All tests completed!${NC}"
 echo -e "If all tests passed, your scraper can communicate with the validation server."
 echo -e "If any test failed, check:"
-echo -e "1. SSH tunnel is active (ssh -R 8000:localhost:8000)"
+echo -e "1. SSH tunnel is active (ssh -R 9100:localhost:9100)"
 echo -e "2. Validation server is running on your local machine"
-echo -e "3. Port 8000 is not being used by another process"
+echo -e "3. Port 9100 is not being used by another process"
 echo -e "4. Your SSH connection is stable"
 
 # Print validation server info
