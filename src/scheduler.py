@@ -89,12 +89,30 @@ class ProxyScheduler:
                     break
             
             print("-" * 60)
-            print("\n🔧 Validating proxy connectivity...")
-            working_proxies = await self.proxy_validator.validate_all_proxies(all_proxies)
             
-            if not working_proxies:
-                print("⚠️ No working proxies found this cycle")
-                return
+            # Add retry logic for validation
+            validation_attempt = 1
+            working_proxies = []
+            retry_delay = 5  # Initial delay of 5 seconds
+            max_retry_delay = 60  # Maximum delay of 60 seconds
+            
+            while not working_proxies:
+                if validation_attempt > 1:
+                    print(f"\n🔄 Validation attempt {validation_attempt} - No working proxies found, retrying in {retry_delay} seconds...")
+                    print("💡 Tip: Press Ctrl+C to stop if you want to exit")
+                    await asyncio.sleep(retry_delay)
+                    # Increase delay for next attempt, but cap at max_retry_delay
+                    retry_delay = min(retry_delay * 1.5, max_retry_delay)
+                
+                print("\n🔧 Validating proxy connectivity...")
+                try:
+                    working_proxies = await self.proxy_validator.validate_all_proxies(all_proxies)
+                    validation_attempt += 1
+                except Exception as e:
+                    print(f"⚠️ Validation attempt failed: {e}")
+                    continue
+            
+            print(f"✅ Found working proxies after {validation_attempt} attempts!")
             
             # Print detailed information about working proxies after validation
             print("\n📋 Working Proxies (After Validation):")
@@ -144,6 +162,7 @@ class ProxyScheduler:
                 print("   • Success rate: N/A (no proxies found)")
             print(f"   • Posted to Telegram: {'Yes' if OUTPUT_CHANNEL and message_id else 'No'}")
             print(f"   • Outdated removed: {removed_count}")
+            print(f"   • Validation attempts: {validation_attempt}")
             
         except Exception as e:
             print(f"❌ Error in hourly cycle: {e}")
