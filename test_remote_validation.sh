@@ -12,7 +12,7 @@ echo -e "${BLUE}Testing Connection to Validation Server${NC}\n"
 
 # Test 1: Basic connectivity test
 echo -e "${BLUE}Test 1: Testing Basic Connectivity${NC}"
-if curl -s --connect-timeout 5 "${VALIDATION_SERVER}/validate" -o /dev/null; then
+if curl -s --connect-timeout 5 "${VALIDATION_SERVER}/" -o /dev/null; then
     echo -e "${GREEN}✓ Can reach validation server${NC}"
 else
     echo -e "${RED}✗ Cannot reach validation server${NC}"
@@ -23,19 +23,23 @@ echo -e "\n"
 echo -e "${BLUE}Test 2: Testing API Response${NC}"
 RESPONSE=$(curl -s -X POST "${VALIDATION_SERVER}/validate" \
   -H "Content-Type: application/json" \
+  -w "\nStatus: %{http_code}" \
   -d '{
     "proxy": "1.1.1.1:80",
     "proxy_type": "http",
     "ping_count": 1
   }')
 
-if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✓ API is responding${NC}"
-    echo "Response:"
-    echo "$RESPONSE" | python3 -m json.tool
+HTTP_STATUS=$(echo "$RESPONSE" | grep "Status:" | cut -d' ' -f2)
+RESPONSE_BODY=$(echo "$RESPONSE" | grep -v "Status:")
+
+if [ "$HTTP_STATUS" = "200" ]; then
+    echo -e "${GREEN}✓ API is responding correctly${NC}"
 else
-    echo -e "${RED}✗ API request failed${NC}"
+    echo -e "${RED}✗ API returned status ${HTTP_STATUS}${NC}"
 fi
+echo "Response:"
+echo "$RESPONSE_BODY" | python3 -m json.tool
 echo -e "\n"
 
 # Test 3: Testing with real proxy from your system
@@ -86,4 +90,12 @@ echo -e "If any test failed, check:"
 echo -e "1. Tailscale connection status"
 echo -e "2. Validation server is running"
 echo -e "3. Port 8000 is open on the validation server"
-echo -e "4. No firewall rules blocking the connection" 
+echo -e "4. No firewall rules blocking the connection"
+
+# Print validation server info
+echo -e "\n${BLUE}Validation Server Info:${NC}"
+curl -s "${VALIDATION_SERVER}/docs" > /dev/null
+if [ $? -eq 0 ]; then
+    echo -e "API Documentation: ${GREEN}${VALIDATION_SERVER}/docs${NC}"
+    echo -e "OpenAPI Schema: ${GREEN}${VALIDATION_SERVER}/openapi.json${NC}"
+fi 
