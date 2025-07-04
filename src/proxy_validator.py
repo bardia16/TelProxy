@@ -14,45 +14,77 @@ class ProxyValidator:
         self.ping_measurements = PING_MEASUREMENTS
         self.ping_delay = PING_DELAY
         self.validation_api_url = "http://127.0.0.1:9100/validate"
+        self.batch_size = 10  # Process 5 proxies at a time
+        self.batch_delay = 0.5  # Wait 2 seconds between batches
+        self.max_retries = 1  # Maximum number of retries for failed validations
     
     async def validate_all_proxies(self, proxies: List[ProxyData]):
         print(f"Starting validation of {len(proxies)} proxies with timeout {self.timeout}s...")
-        
-        tasks = []
-        for proxy in proxies:
-            task = asyncio.create_task(self.validate_single_proxy(proxy))
-            tasks.append(task)
-        
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        print(f"Processing in batches of {self.batch_size} with {self.batch_delay}s delay between batches")
         
         working_proxies = []
-        for i, result in enumerate(results):
-            proxy_key = f"{proxies[i].server}:{proxies[i].port}"
-            if isinstance(result, Exception):
-                print(f"Error validating proxy {proxy_key} - {type(result).__name__}: {result}")
-                self.validation_results[proxy_key] = False
-                self.ping_results[proxy_key] = float('inf')
-            elif result:
-                working_proxies.append(proxies[i])
-                self.validation_results[proxy_key] = True
-            else:
-                self.validation_results[proxy_key] = False
-                self.ping_results[proxy_key] = float('inf')
+        
+        # Process proxies in batches
+        for i in range(0, len(proxies), self.batch_size):
+            batch = proxies[i:i + self.batch_size]
+            print(f"\nValidating batch {(i//self.batch_size)+1}/{(len(proxies)-1)//self.batch_size + 1} ({len(batch)} proxies)")
+            
+            tasks = []
+            for proxy in batch:
+                task = asyncio.create_task(self.validate_single_proxy_with_retry(proxy))
+                tasks.append(task)
+            
+            # Wait for the current batch to complete
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Process results for this batch
+            for j, result in enumerate(results):
+                proxy = batch[j]
+                proxy_key = f"{proxy.server}:{proxy.port}"
+                
+                if isinstance(result, Exception):
+                    print(f"  {proxy_key}: ✗ Error - {type(result).__name__}: {result}")
+                    self.validation_results[proxy_key] = False
+                    self.ping_results[proxy_key] = float('inf')
+                elif result:
+                    working_proxies.append(proxy)
+                    self.validation_results[proxy_key] = True
+                    print(f"  {proxy_key}: ✓ Working")
+                else:
+                    self.validation_results[proxy_key] = False
+                    self.ping_results[proxy_key] = float('inf')
+                    print(f"  {proxy_key}: ✗ Failed validation")
+            
+            # Wait before processing the next batch
+            if i + self.batch_size < len(proxies):
+                print(f"Waiting {self.batch_delay}s before next batch...")
+                await asyncio.sleep(self.batch_delay)
         
         # Sort working proxies by ping (lowest ping first)
         working_proxies.sort(key=lambda proxy: self.get_proxy_ping(proxy))
         
-        print(f"Validation complete: {len(working_proxies)}/{len(proxies)} proxies are working")
-        print("🏆 Top 10 proxies by ping:")
-        for i, proxy in enumerate(working_proxies[:10]):
-            ping = self.get_proxy_ping(proxy)
-            if ping != float('inf'):
-                ping_str = f"{ping*1000:.0f}ms"
-            else:
-                ping_str = "N/A"
-            print(f"  {i+1:2d}. {proxy.server:<20} {proxy.port:<6} - {ping_str} ({proxy.proxy_type})")
+        print(f"\nValidation complete: {len(working_proxies)}/{len(proxies)} proxies are working")
+        if working_proxies:
+            print("\n🏆 Top 10 proxies by ping:")
+            for i, proxy in enumerate(working_proxies[:10]):
+                ping = self.get_proxy_ping(proxy)
+                if ping != float('inf'):
+                    ping_str = f"{ping*1000:.0f}ms"
+                else:
+                    ping_str = "N/A"
+                print(f"  {i+1:2d}. {proxy.server:<20} {proxy.port:<6} - {ping_str} ({proxy.proxy_type})")
         
         return working_proxies
+    
+    async def validate_single_proxy_with_retry(self, proxy: ProxyData, attempt: int = 0) -> bool:
+        try:
+            return await self.validate_single_proxy(proxy)
+        except Exception as e:
+            if attempt < self.max_retries:
+                print(f"  Retrying {proxy.server}:{proxy.port} (attempt {attempt + 2}/{self.max_retries + 1})")
+                await asyncio.sleep(1)  # Wait before retry
+                return await self.validate_single_proxy_with_retry(proxy, attempt + 1)
+            raise e
     
     async def validate_single_proxy(self, proxy: ProxyData):
         proxy_key = f"{proxy.server}:{proxy.port}"
@@ -103,3 +135,13 @@ class ProxyValidator:
     def configure_ping_settings(self, measurements: int = 5, delay: float = 0.2):
         self.ping_measurements = measurements
         self.ping_delay = delay
+        
+    def configure_batch_settings(self, batch_size: int = 5, batch_delay: float = 2):
+        """Configure batch processing settings
+        
+        Args:
+            batch_size: Number of proxies to validate concurrently
+            batch_delay: Delay in seconds between batches
+        """
+        self.batch_size = batch_size
+        self.batch_delay = batch_delay
