@@ -4,7 +4,7 @@ import requests
 import asyncio
 import socket
 import time
-from typing import Optional, List
+from typing import Optional, List, Union
 
 app = FastAPI(title="Proxy Validation Service")
 
@@ -24,9 +24,14 @@ class ValidationResponse(BaseModel):
     error: Optional[str] = None
     ip: Optional[str] = None
     ping: Optional[float] = None  # Average ping in seconds
-    ping_measurements: Optional[List[float]] = None  # Individual ping measurements
+    ping_measurements: Optional[List[Optional[float]]] = None  # Individual ping measurements can be None
     telegram_connectivity: Optional[bool] = None  # Whether Telegram domains are accessible
     telegram_results: Optional[dict] = None  # Detailed Telegram connectivity results
+
+    class Config:
+        json_encoders = {
+            float: lambda v: None if v == float('inf') or v == float('-inf') else v
+        }
 
 class HealthResponse(BaseModel):
     status: str
@@ -51,7 +56,7 @@ async def health_check():
 async def root():
     return {"status": "running", "endpoints": ["/validate", "/health"]}
 
-async def measure_connection_ping(host: str, port: int, timeout: float = 5) -> float:
+async def measure_connection_ping(host: str, port: int, timeout: float = 5) -> Optional[float]:
     try:
         start_time = time.time()
         reader, writer = await asyncio.wait_for(
@@ -64,7 +69,7 @@ async def measure_connection_ping(host: str, port: int, timeout: float = 5) -> f
     except Exception:
         return None  # Return None instead of float('inf')
 
-async def measure_proxy_ping(proxy_req: ProxyRequest) -> List[float]:
+async def measure_proxy_ping(proxy_req: ProxyRequest) -> List[Optional[float]]:
     try:
         host, port = proxy_req.proxy.split(':')
         port = int(port)
@@ -72,7 +77,7 @@ async def measure_proxy_ping(proxy_req: ProxyRequest) -> List[float]:
         
         for _ in range(proxy_req.ping_count):
             ping_time = await measure_connection_ping(host, port)
-            ping_times.append(ping_time if ping_time is not None else None)  # Convert inf to None
+            ping_times.append(ping_time)  # Already None if connection failed
             if _ < proxy_req.ping_count - 1:  # Don't sleep after last measurement
                 await asyncio.sleep(proxy_req.ping_delay)
         
@@ -89,7 +94,7 @@ async def test_telegram_connectivity() -> dict:
     for domain in TELEGRAM_TEST_DOMAINS:
         try:
             ping_result = await measure_connection_ping(domain, 443)
-            success = ping_result is not None and ping_result != float('inf')
+            success = ping_result is not None
             results[domain] = success
             if success:
                 any_success = True
@@ -165,15 +170,15 @@ async def validate_proxy(proxy_req: ProxyRequest):
                     return ValidationResponse(
                         valid=False,
                         error=f"HTTP {response.status_code}",
-                        ping=None,  # Use None instead of float('inf')
-                        ping_measurements=[None] * proxy_req.ping_count  # Use None instead of float('inf')
+                        ping=None,
+                        ping_measurements=[None] * proxy_req.ping_count
                     )
             except requests.RequestException as e:
                 return ValidationResponse(
                     valid=False,
                     error=f"Proxy test failed: {str(e)}",
-                    ping=None,  # Use None instead of float('inf')
-                    ping_measurements=[None] * proxy_req.ping_count  # Use None instead of float('inf')
+                    ping=None,
+                    ping_measurements=[None] * proxy_req.ping_count
                 )
 
     except Exception as e:
