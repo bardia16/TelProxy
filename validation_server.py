@@ -32,6 +32,12 @@ class HealthResponse(BaseModel):
     status: str
     telegram_domains_accessible: bool
 
+def convert_infinite_to_null(value):
+    """Convert infinite float values to None for JSON serialization"""
+    if isinstance(value, float) and (value == float('inf') or value == float('-inf')):
+        return None
+    return value
+
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
     # Test Telegram domain connectivity
@@ -56,7 +62,7 @@ async def measure_connection_ping(host: str, port: int, timeout: float = 5) -> f
         await writer.wait_closed()
         return time.time() - start_time
     except Exception:
-        return float('inf')
+        return None  # Return None instead of float('inf')
 
 async def measure_proxy_ping(proxy_req: ProxyRequest) -> List[float]:
     try:
@@ -66,7 +72,7 @@ async def measure_proxy_ping(proxy_req: ProxyRequest) -> List[float]:
         
         for _ in range(proxy_req.ping_count):
             ping_time = await measure_connection_ping(host, port)
-            ping_times.append(ping_time)
+            ping_times.append(ping_time if ping_time is not None else None)  # Convert inf to None
             if _ < proxy_req.ping_count - 1:  # Don't sleep after last measurement
                 await asyncio.sleep(proxy_req.ping_delay)
         
@@ -82,7 +88,8 @@ async def test_telegram_connectivity() -> dict:
     
     for domain in TELEGRAM_TEST_DOMAINS:
         try:
-            success = await measure_connection_ping(domain, 443) != float('inf')
+            ping_result = await measure_connection_ping(domain, 443)
+            success = ping_result is not None and ping_result != float('inf')
             results[domain] = success
             if success:
                 any_success = True
@@ -99,8 +106,8 @@ async def validate_proxy(proxy_req: ProxyRequest):
     try:
         # Measure ping first
         ping_times = await measure_proxy_ping(proxy_req)
-        valid_pings = [p for p in ping_times if p != float('inf')]
-        avg_ping = sum(valid_pings) / len(valid_pings) if valid_pings else float('inf')
+        valid_pings = [p for p in ping_times if p is not None]
+        avg_ping = sum(valid_pings) / len(valid_pings) if valid_pings else None
 
         # Initialize telegram test results
         telegram_test_results = None
@@ -158,15 +165,15 @@ async def validate_proxy(proxy_req: ProxyRequest):
                     return ValidationResponse(
                         valid=False,
                         error=f"HTTP {response.status_code}",
-                        ping=float('inf'),
-                        ping_measurements=[float('inf')] * proxy_req.ping_count
+                        ping=None,  # Use None instead of float('inf')
+                        ping_measurements=[None] * proxy_req.ping_count  # Use None instead of float('inf')
                     )
             except requests.RequestException as e:
                 return ValidationResponse(
                     valid=False,
                     error=f"Proxy test failed: {str(e)}",
-                    ping=float('inf'),
-                    ping_measurements=[float('inf')] * proxy_req.ping_count
+                    ping=None,  # Use None instead of float('inf')
+                    ping_measurements=[None] * proxy_req.ping_count  # Use None instead of float('inf')
                 )
 
     except Exception as e:
