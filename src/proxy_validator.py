@@ -103,8 +103,3 @@ class ProxyValidator:
     def configure_ping_settings(self, measurements: int = 5, delay: float = 0.2):
         self.ping_measurements = measurements
         self.ping_delay = delay
-    
-    def get_validation_summary(self):
-        total = len(self.validation_results)
-        working = sum(1 for v in self.validation_results.values() if v)
-        return f"{working}/{total} proxies working"

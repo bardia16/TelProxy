@@ -133,19 +133,23 @@ class ProxyScheduler:
             print("🧹 Cleaning up outdated proxies...")
             removed_count = self.proxy_storage.remove_outdated_proxies(days_old=7)
             
-            stats = self.proxy_validator.get_validation_summary()
-            posting_stats = self.proxy_storage.get_posting_stats()
-            
             print(f"\n📊 Cycle Summary:")
             print(f"   • Messages processed: {len(messages)}")
             print(f"   • Proxies extracted: {len(all_proxies)} (after deduplication)")
             print(f"   • Working proxies: {len(working_proxies)}")
-            print(f"   • Success rate: {stats['success_rate']:.1f}%")
+            if all_proxies:
+                success_rate = (len(working_proxies) / len(all_proxies)) * 100
+                print(f"   • Success rate: {success_rate:.1f}%")
+            else:
+                print("   • Success rate: N/A (no proxies found)")
             print(f"   • Posted to Telegram: {'Yes' if OUTPUT_CHANNEL and message_id else 'No'}")
             print(f"   • Outdated removed: {removed_count}")
             
         except Exception as e:
             print(f"❌ Error in hourly cycle: {e}")
+            import traceback
+            print("Traceback:")
+            print(traceback.format_exc())
         
         finally:
             await self.telegram_client.close_session()
