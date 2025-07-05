@@ -43,17 +43,17 @@ class ProxyValidator:
                 proxy_key = f"{proxy.server}:{proxy.port}"
                 
                 if isinstance(result, Exception):
-                    print(f"  {proxy_key}: ✗ Error - {type(result).__name__}: {result}")
+                    #print(f"  {proxy_key}: ✗ Error - {type(result).__name__}: {result}")
                     self.validation_results[proxy_key] = False
                     self.ping_results[proxy_key] = None
                 elif result:
                     working_proxies.append(proxy)
                     self.validation_results[proxy_key] = True
-                    print(f"  {proxy_key}: ✓ Working")
+                    #print(f"  {proxy_key}: ✓ Working")
                 else:
                     self.validation_results[proxy_key] = False
                     self.ping_results[proxy_key] = None
-                    print(f"  {proxy_key}: ✗ Failed validation")
+                    #print(f"  {proxy_key}: ✗ Failed validation")
             
             # Wait before processing the next batch
             if i + self.batch_size < len(proxies):
@@ -81,7 +81,7 @@ class ProxyValidator:
             return await self.validate_single_proxy(proxy)
         except Exception as e:
             if attempt < self.max_retries:
-                print(f"  Retrying {proxy.server}:{proxy.port} (attempt {attempt + 2}/{self.max_retries + 1})")
+                #(f"  Retrying {proxy.server}:{proxy.port} (attempt {attempt + 2}/{self.max_retries + 1})")
                 await asyncio.sleep(1)  # Wait before retry
                 return await self.validate_single_proxy_with_retry(proxy, attempt + 1)
             raise e
@@ -116,7 +116,7 @@ class ProxyValidator:
                     return False
             
         except Exception as e:
-            print(f"  {proxy_key}: ✗ Error - {type(e).__name__}: {e}")
+            #print(f"  {proxy_key}: ✗ Error - {type(e).__name__}: {e}")
             self.ping_results[proxy_key] = float('inf')
             return False
     

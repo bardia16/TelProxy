@@ -64,7 +64,7 @@ class ProxyExtractor:
                             original_url=full_url
                         )
                         all_proxies.append(proxy)
-                        print(f"Found proxy in href: {server}:{port}")
+                        #print(f"Found proxy in href: {server}:{port}")
             except Exception as e:
                 print(f"Error parsing href '{href}': {type(e).__name__}: {e}")
         
@@ -99,7 +99,7 @@ class ProxyExtractor:
                         original_url=full_url
                     )
                     all_proxies.append(proxy)
-                    print(f"Found proxy in text: {server}:{port}")
+                    #print(f"Found proxy in text: {server}:{port}")
                 except Exception as e:
                     print(f"Error parsing text match: {type(e).__name__}: {e}")
         
