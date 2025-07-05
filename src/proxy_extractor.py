@@ -64,8 +64,9 @@ class ProxyExtractor:
                             original_url=full_url
                         )
                         all_proxies.append(proxy)
-            except Exception:
-                pass
+                        print(f"Found proxy in href: {server}:{port}")
+            except Exception as e:
+                print(f"Error parsing href '{href}': {type(e).__name__}: {e}")
         
         # Also check text content for plain text links
         if text:
@@ -98,8 +99,9 @@ class ProxyExtractor:
                         original_url=full_url
                     )
                     all_proxies.append(proxy)
-                except Exception:
-                    continue
+                    print(f"Found proxy in text: {server}:{port}")
+                except Exception as e:
+                    print(f"Error parsing text match: {type(e).__name__}: {e}")
         
         # Deduplicate proxies by server:port
         unique_proxies = []
@@ -111,12 +113,17 @@ class ProxyExtractor:
                 seen_servers.add(server_port)
                 unique_proxies.append(proxy)
         
+        print(f"Found {len(unique_proxies)} unique proxies")
+        
         # Validate proxy format
         validated_proxies = []
         for proxy in unique_proxies:
             if self.validate_proxy_format(proxy):
                 validated_proxies.append(proxy)
+            else:
+                print(f"Invalid proxy format: {proxy.server}:{proxy.port}")
         
+        print(f"Validated {len(validated_proxies)} proxies with correct format")
         return validated_proxies
     
     def validate_proxy_format(self, proxy_data: ProxyData):
@@ -125,17 +132,21 @@ class ProxyExtractor:
         
         # Be more lenient with IP/domain validation
         if not self._is_valid_ip_or_domain(proxy_data.server):
+            print(f"Invalid server address: {proxy_data.server}")
             return False
         
         try:
             port_num = int(proxy_data.port)
             if port_num < 1 or port_num > 65535:
+                print(f"Invalid port number: {proxy_data.port}")
                 return False
         except ValueError:
+            print(f"Port is not a number: {proxy_data.port}")
             return False
         
         # Be lenient with secret validation - just check if it exists
         if proxy_data.proxy_type == 'mtproto' and not proxy_data.secret:
+            print(f"Missing MTProto secret")
             return False
         
         return True

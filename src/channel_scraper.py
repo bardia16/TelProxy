@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 from src.telegram_client import TelegramClient
 from config.channels import TELEGRAM_CHANNELS
-from telethon.tl.types import Message
 
 
 class ChannelScraper:
@@ -21,20 +20,29 @@ class ChannelScraper:
             'обход блокировки', 'прокси', 'телеграм', 'подключение'  # Russian keywords
         ]
     
-    async def scrape_all_channels(self) -> List[Message]:
-        """Scrape all target channels for proxy messages"""
+    async def scrape_all_channels(self):
         all_messages = []
         successful_channels = 0
         
         for channel_url in self.target_channels:
+            print(f"Scraping channel: {self.get_channel_name_from_url(channel_url)}")
+            
             try:
                 messages = await self.scrape_single_channel(channel_url)
-                relevant_messages = [msg for msg in messages if self.is_relevant_message(msg)]
-                all_messages.extend(relevant_messages)
-                successful_channels += 1
+                if messages:
+                    relevant_messages = self.filter_relevant_messages(messages)
+                    all_messages.extend(relevant_messages)
+                    successful_channels += 1
+                    print(f"Found {len(relevant_messages)} relevant messages")
+                
+                await asyncio.sleep(2)
+                
             except Exception as e:
+                print(f"Failed to scrape {channel_url}: {e}")
                 continue
         
+        print(f"Successfully scraped {successful_channels}/{len(self.target_channels)} channels")
+        print(f"Total relevant messages found: {len(all_messages)}")
         return all_messages
     
     async def scrape_single_channel(self, channel_url: str):
@@ -50,6 +58,7 @@ class ChannelScraper:
             return messages
             
         except Exception as e:
+            print(f"Error scraping channel {channel_url}: {e}")
             return []
     
     def filter_relevant_messages(self, messages: List[Any]):
