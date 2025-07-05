@@ -25,15 +25,62 @@ fi
 
 # Function to cleanup ports and processes
 cleanup_ports() {
+    echo "[$(date)] Starting cleanup..."
+    
+    # Show current processes using port 9100
+    echo "Current processes using port 9100:"
+    lsof -i:9100 || netstat -anp 2>/dev/null | grep ":9100"
+    
     # Kill processes using port 9100
     if command -v lsof >/dev/null 2>&1; then
-        lsof -ti:9100 | xargs -r kill -9
+        PIDS=$(lsof -ti:9100)
+        if [ ! -z "$PIDS" ]; then
+            echo "Killing processes with PIDs: $PIDS"
+            kill -9 $PIDS
+        else
+            echo "No processes found using lsof"
+        fi
     else
+        echo "Using fuser to kill processes..."
         fuser -k 9100/tcp >/dev/null 2>&1
     fi
+    
     # Kill any existing SSH processes for this tunnel
-    pkill -f "ssh.*9100" >/dev/null 2>&1
+    SSH_PIDS=$(ps aux | grep "ssh.*9100" | grep -v grep | awk '{print $2}')
+    if [ ! -z "$SSH_PIDS" ]; then
+        echo "Killing SSH processes with PIDs: $SSH_PIDS"
+        kill -9 $SSH_PIDS >/dev/null 2>&1
+    else
+        echo "No SSH processes found"
+    fi
+    
     sleep 2
+    
+    # Verify port status
+    if lsof -i:9100 >/dev/null 2>&1 || netstat -an | grep -q ":9100"; then
+        echo "WARNING: Port 9100 is still in use after cleanup!"
+        echo "Current port status:"
+        lsof -i:9100 || netstat -an | grep ":9100"
+    else
+        echo "Port 9100 is now free"
+    fi
+}
+
+# Function to start tunnel
+start_tunnel() {
+    echo "[$(date)] Starting new tunnel..."
+    $SSH_CMD &
+    
+    # Wait for tunnel to establish
+    echo "Waiting for tunnel to establish..."
+    sleep 5
+    
+    # Check if tunnel started successfully
+    if netstat -an | grep -q ":9100.*ESTABLISHED"; then
+        echo "Tunnel established successfully"
+    else
+        echo "Failed to establish tunnel"
+    fi
 }
 
 # SSH tunnel command with connection persistence options
@@ -53,10 +100,7 @@ while true; do
     if ! netstat -an | grep -q ":9100.*ESTABLISHED"; then
         echo "[$(date)] Tunnel appears to be down. Cleaning up and restarting..."
         cleanup_ports
-        # Start new tunnel
-        $SSH_CMD
-        # Give it time to establish
-        sleep 10
+        start_tunnel
     else
         echo -n "."
         sleep 5
