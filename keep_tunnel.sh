@@ -23,6 +23,19 @@ if [ -z "$REMOTE_HOST" ]; then
     exit 1
 fi
 
+# Function to cleanup ports and processes
+cleanup_ports() {
+    # Kill processes using port 9100
+    if command -v lsof >/dev/null 2>&1; then
+        lsof -ti:9100 | xargs -r kill -9
+    else
+        fuser -k 9100/tcp >/dev/null 2>&1
+    fi
+    # Kill any existing SSH processes for this tunnel
+    pkill -f "ssh.*9100" >/dev/null 2>&1
+    sleep 2
+}
+
 # SSH tunnel command with connection persistence options
 SSH_CMD="ssh -v -N -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -o TCPKeepAlive=yes -o ConnectTimeout=30 -R localhost:9100:127.0.0.1:9100 $REMOTE_USER@$REMOTE_HOST -p 22"
 
@@ -32,14 +45,14 @@ echo
 echo "Press Ctrl+C to stop the monitor"
 echo
 
+# Initial cleanup
+cleanup_ports
+
 while true; do
-    # Check if tunnel is running
-    if ! netstat -an | grep -q ":9100"; then
-        echo "[$(date)] Tunnel is down. Restarting..."
-        # Kill any existing SSH processes
-        pkill -f "ssh.*9100" > /dev/null 2>&1
-        # Wait a moment for cleanup
-        sleep 2
+    # Check for ESTABLISHED connections
+    if ! netstat -an | grep -q ":9100.*ESTABLISHED"; then
+        echo "[$(date)] Tunnel appears to be down. Cleaning up and restarting..."
+        cleanup_ports
         # Start new tunnel
         $SSH_CMD
         # Give it time to establish

@@ -38,21 +38,31 @@ echo.
 echo Press Ctrl+C to stop the monitor
 echo.
 
+:cleanup_ports
+:: Kill any processes using port 9100
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":9100.*LISTENING"') do (
+    taskkill /F /PID %%a >nul 2>&1
+)
+:: Kill any existing SSH processes
+taskkill /F /IM ssh.exe >nul 2>&1
+timeout /t 2 /nobreak >nul
+
 :loop
-:: Check if tunnel is running
-netstat -an | find ":9100" > nul
-if errorlevel 1 (
-    echo [%date% %time%] Tunnel is down. Restarting...
-    :: Kill any existing SSH processes
-    taskkill /F /IM ssh.exe > nul 2>&1
-    :: Wait a moment for cleanup
-    timeout /t 2 /nobreak > nul
+:: Check both LISTENING and ESTABLISHED connections
+set "TUNNEL_ACTIVE=0"
+for /f "tokens=4" %%a in ('netstat -an ^| findstr ":9100.*ESTABLISHED"') do (
+    set "TUNNEL_ACTIVE=1"
+)
+
+if "!TUNNEL_ACTIVE!"=="0" (
+    echo [%date% %time%] Tunnel appears to be down. Cleaning up and restarting...
+    goto cleanup_ports
     :: Start new tunnel
     %SSH_CMD%
     :: Give it time to establish
-    timeout /t 10 /nobreak > nul
+    timeout /t 10 /nobreak >nul
 ) else (
     echo|set /p="."
-    timeout /t 5 /nobreak > nul
+    timeout /t 5 /nobreak >nul
 )
 goto loop 
