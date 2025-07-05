@@ -29,8 +29,8 @@ if not defined REMOTE_HOST (
     exit /b 1
 )
 
-:: SSH tunnel command - modified to use localhost explicitly
-set "SSH_CMD=ssh -v -R localhost:9100:127.0.0.1:9100 %REMOTE_USER%@%REMOTE_HOST% -p 22"
+:: SSH tunnel command with connection persistence options
+set "SSH_CMD=ssh -v -N -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -o TCPKeepAlive=yes -o ConnectTimeout=30 -R localhost:9100:127.0.0.1:9100 %REMOTE_USER%@%REMOTE_HOST% -p 22"
 
 echo Starting SSH tunnel monitor...
 echo Command: %SSH_CMD%
@@ -42,14 +42,17 @@ echo.
 :: Check if tunnel is running
 netstat -an | find ":9100" > nul
 if errorlevel 1 (
-    echo Tunnel is down. Restarting...
+    echo [%date% %time%] Tunnel is down. Restarting...
     :: Kill any existing SSH processes
     taskkill /F /IM ssh.exe > nul 2>&1
+    :: Wait a moment for cleanup
+    timeout /t 2 /nobreak > nul
     :: Start new tunnel
     %SSH_CMD%
-    timeout /t 5 /nobreak > nul
+    :: Give it time to establish
+    timeout /t 10 /nobreak > nul
 ) else (
-    echo|set /p=".">nul
+    echo|set /p="."
     timeout /t 5 /nobreak > nul
 )
 goto loop 
